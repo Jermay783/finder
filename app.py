@@ -381,7 +381,7 @@ class App:
      rows=list(csv.reader(source))
      names=[row[0].strip() for row in rows if row and row[0].strip()]
     else:names=source.read().splitlines()
-   self.batch_input.delete('1.0','end');self.batch_input.insert('1.0','\\n'.join(names))
+   self.batch_input.delete('1.0','end');self.batch_input.insert('1.0','\n'.join(names))
   except (OSError,UnicodeError) as exc:messagebox.showerror('Импорт',str(exc))
  def start(self):
   if self.worker and self.worker.is_alive():return messagebox.showwarning('Поиск','Сначала дождитесь остановки текущего поиска')
@@ -392,7 +392,7 @@ class App:
   except (ValueError,tk.TclError):return messagebox.showerror('Ошибка','Некорректные лимиты')
   self.current_batch=None
   if len(products)>1:
-   try:self.current_batch=create_batch(self.conn,'\\n'.join(products),self.small.get(),budget,limit)
+   try:self.current_batch=create_batch(self.conn,'\n'.join(products),self.small.get(),budget,limit)
    except ValueError as exc:return messagebox.showerror('Пакетный поиск',str(exc))
    self.current=self.conn.execute('SELECT search_id FROM batch_items WHERE batch_id=? ORDER BY position LIMIT 1',(self.current_batch,)).fetchone()[0]
   else:
