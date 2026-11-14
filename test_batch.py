@@ -64,8 +64,10 @@ class FinderBatchTests(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM saved_shops").fetchone()[0], 0)
         self.conn.execute("INSERT OR IGNORE INTO saved_shops(domain) VALUES('example.com')")
         self.conn.commit()
-        with core.connect(self.db) as check_conn:
+        check_conn = core.connect(self.db)
+        try:
             self.assertEqual(check_conn.execute("SELECT COUNT(*) FROM saved_shops").fetchone()[0], 1)
+        finally:
             check_conn.close()
 
 
