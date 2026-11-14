@@ -1,15 +1,23 @@
-# Finder
+# US Store Finder 3.3 (Windows)
 
-Private Windows application for finding online stores in the USA.
+## Изменения
+- Сначала отдельные Brave-запросы по известным реальным магазинам США, подобранным по категории товара (Apple, Best Buy, Costco, Walmart и другие). Это не гарантия наличия товара.
+- После приоритетных магазинов — глубокий поиск независимых продавцов.
+- Известные информационные и ценовые сайты не загружаются и не попадают в пользовательский журнал.
+- Сохранены SQLite, лимиты, фильтры, Playwright fallback, экспорт TXT, пауза и возобновление.
+- Неподтверждённые предложения остаются неподтверждёнными.
 
-## Build
-GitHub Actions → Build Finder for Windows → Run workflow. Requires app.py, core.py and requirements.txt in repository root. Once the build succeeds, download the Finder-Windows artifact containing Finder.exe.
+## Запуск
+1. Windows 10/11, Python 3.11+ и интернет.
+2. Распакуйте архив и запустите start_windows.bat.
+3. Введите собственный Brave Search API key.
+4. Для сборки одного EXE запустите build_windows.bat (PyInstaller). Браузер Edge или Chrome должен быть установлен для динамических страниц.
 
-## Releases
-Pushing a version tag such as v3.3.0 triggers a Windows build and creates a private release with Finder.exe.
+## Обновления без скачивания архивов из чата
+Нужен опубликованный источник версий, например ваш репозиторий GitHub с Releases. Пока адрес репозитория не указан и релизы не опубликованы, приложение не может получать обновления автоматически. В архив включён файл UPDATE_SETUP.md с пошаговой настройкой. Не вводите API-ключ в GitHub и не включайте базу с секретами в публичный репозиторий.
 
-## Security
-Never commit API keys, GitHub tokens, local databases or personal settings. Private GitHub Releases require authenticated access. Do not embed a GitHub token in the EXE.
-
-## Current setup status
-Build workflow configured; application source upload and first build still pending.
+## Ограничения
+- Поиск не гарантирует охват всех магазинов. Доступность Brave, ограничения сайтов и динамический контент влияют на результат.
+- Присутствие магазина в стартовом каталоге не доказывает наличие конкретного товара или доставку по США.
+- EXE собирается на Windows; Linux-сборка не будет Windows EXE.
+- Жёсткие правила для валют и ccTLD могут исключать международных продавцов, продающих в США.
