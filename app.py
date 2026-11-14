@@ -120,6 +120,7 @@ class App:
   history_actions=ttk.Frame(right_history);history_actions.pack(fill='x',pady=10)
   ttk.Button(history_actions,text='Повторить поиск',command=self.repeat_history).pack(side='left',padx=(0,8))
   ttk.Button(history_actions,text='Экспорт TXT',command=self.export_history).pack(side='left',padx=(0,8))
+  ttk.Button(history_actions,text='Сохранить магазин',command=self.save_history_shop).pack(side='left',padx=(0,8))
   ttk.Button(history_actions,text='Удалить из истории',command=self.delete_history).pack(side='left')
   shops=self.pages['shops']
   ttk.Label(shops,text='Мои магазины',style='Heading.TLabel').pack(anchor='w',pady=(0,12))
@@ -374,6 +375,21 @@ class App:
     # Same URL can occur in multiple product searches; preserve both entries.
     iid=str(sid)+':'+url
     self.history_results.insert('','end',iid=iid,values=(domain,title,f'{price} {currency}' if price is not None else '—'))
+ def save_history_shop(self):
+  selected=self.history_results.selection()
+  if not selected:
+   return messagebox.showinfo('Мои магазины','Выберите магазин в результатах истории')
+  domain=self.history_results.item(selected[0],'values')[0]
+  if not domain:return
+  # Save only the domain from a confirmed result, never a marketplace seller.
+  from core import is_marketplace, is_non_store
+  if is_marketplace('https://'+domain) or is_non_store('https://'+domain):
+   return messagebox.showwarning('Мои магазины','Маркетплейсы и информационные сайты нельзя сохранять как самостоятельные магазины')
+  existed=self.conn.execute('SELECT 1 FROM saved_shops WHERE domain=?',(domain,)).fetchone()
+  self.conn.execute('INSERT OR IGNORE INTO saved_shops(domain) VALUES(?)',(domain,))
+  self.conn.commit()
+  self.load_saved_shops()
+  messagebox.showinfo('Мои магазины',f'{domain}: '+('уже сохранён' if existed else 'сохранён'))
  def repeat_history(self):
   sid=getattr(self,'history_selected',None)
   if sid is None:return
