@@ -1,5 +1,7 @@
 """Public GitHub Releases updater for Finder (no GitHub CLI required)."""
 import hashlib
+import datetime
+import time
 import os
 import pathlib
 import re
@@ -13,7 +15,7 @@ import requests
 REPO = "Jermay783/finder"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Finder-Updater/3.3"}
-VERSION = "3.4.3"
+VERSION = "3.5.0"
 
 
 def current_version():
@@ -129,16 +131,34 @@ try {
   [System.Windows.MessageBox]::Show("Не удалось установить обновление Finder. Журнал: $log" + [Environment]::NewLine + $_.Exception.Message, "Finder - ошибка обновления") | Out-Null
   exit 1
 }
-""", encoding="utf-8")
+""", encoding="utf-8-sig")
     expected_hash = hashlib.sha256(downloaded.read_bytes()).hexdigest()
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-    # Fail visibly if PowerShell cannot even start.
-    subprocess.Popen(
+    # Persist diagnostics before starting the helper, so even startup failures are visible.
+    log_dir = pathlib.Path(os.environ.get("LOCALAPPDATA", str(pathlib.Path.home()))) / "Finder"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "updater.log"
+    def log(message):
+        with log_path.open("a", encoding="utf-8") as out:
+            out.write(f"{datetime.datetime.now().isoformat()} [launcher] {message}\\n")
+    log(f"Prepared update: pid={pid} source={downloaded} destination={target}")
+    try:
+        proc = subprocess.Popen(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
          "-FinderProcessId", str(pid), "-Source", str(downloaded), "-Destination", str(target),
          "-ExpectedHash", expected_hash],
         creationflags=flags, close_fds=True,
-    )
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        log(f"PowerShell helper launched: pid={proc.pid}")
+        time.sleep(1.0)
+        code = proc.poll()
+        if code is not None:
+            log(f"PowerShell helper exited prematurely: code={code}")
+            raise RuntimeError(f"Установщик завершился до закрытия Finder (код {code}). Журнал: {log_path}")
+    except Exception as exc:
+        log(f"Failed to launch helper: {exc}")
+        raise
 
 
 def update_async(callback):
