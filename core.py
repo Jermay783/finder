@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS jobs(search_id INTEGER PRIMARY KEY,queue TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS candidates(search_id INTEGER,url TEXT,domain TEXT,title TEXT DEFAULT '',status TEXT DEFAULT 'Ожидает',reason TEXT DEFAULT '',PRIMARY KEY(search_id,url));
 CREATE TABLE IF NOT EXISTS results(search_id INTEGER,url TEXT,domain TEXT,title TEXT,price REAL,currency TEXT,availability TEXT,condition TEXT,upc TEXT,score REAL,checked TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(search_id,url));
 CREATE TABLE IF NOT EXISTS stores(domain TEXT PRIMARY KEY,shop_name TEXT,first_seen TEXT DEFAULT CURRENT_TIMESTAMP,last_seen TEXT DEFAULT CURRENT_TIMESTAMP,us_status TEXT DEFAULT 'unverified',category_terms TEXT DEFAULT '',product_count INTEGER DEFAULT 0,platform TEXT DEFAULT '',last_product_url TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS search_batches(id INTEGER PRIMARY KEY,created TEXT DEFAULT CURRENT_TIMESTAMP,api_limit INTEGER NOT NULL,store_limit INTEGER NOT NULL,status TEXT DEFAULT 'new');
+CREATE TABLE IF NOT EXISTS batch_items(batch_id INTEGER NOT NULL,search_id INTEGER NOT NULL UNIQUE,position INTEGER NOT NULL,PRIMARY KEY(batch_id,position));
 CREATE TABLE IF NOT EXISTS saved_shops(domain TEXT PRIMARY KEY, saved_at TEXT DEFAULT CURRENT_TIMESTAMP, note TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS ix_results_domain ON results(search_id,domain);
 CREATE INDEX IF NOT EXISTS ix_candidates_status ON candidates(search_id,status);
@@ -74,6 +76,21 @@ def allowed_domain(url):
 def non_us_currency(value):
  return str(value or '').strip().upper() in NON_US_CURRENCY or (bool(value) and str(value).strip().upper() not in ('USD','US$','$'))
 
+# Marketplace sellers and their subdomains are never independent stores.
+MARKETPLACE_DOMAINS={'ebay.com','amazon.com','etsy.com','aliexpress.com','temu.com','mercari.com','poshmark.com','bonanza.com','offerup.com','facebook.com','craigslist.org','walmart.com'}
+def is_marketplace(url):
+ host=(urlparse(url).hostname or '').lower().rstrip('.')
+ return any(host==domain or host.endswith('.'+domain) for domain in MARKETPLACE_DOMAINS)
+
+def split_products(text):
+ """Preserve model names; one product per line, stable case-insensitive deduplication."""
+ items=[];seen=set()
+ for raw in text.splitlines():
+  name=raw.strip()
+  if name and name.casefold() not in seen:
+   items.append(name);seen.add(name.casefold())
+ return items
+
 def query_tokens(s):return set(re.findall(r'[a-z0-9]+',s.lower()))
 def iphone_model(s):
  m=re.search(r'\biphone\s*(\d{1,2})\s*(pro\s*max|pro|plus|mini)?\b',s,re.I)
@@ -92,6 +109,11 @@ def match_product(query,title,upc='',found_upc=''):
  expected=iphone_model(query);actual=iphone_model(title)
  if expected and actual!=expected:return 0.0,'Другая модель / модификация iPhone'
  if expected and not actual:return 0.0,'Модель iPhone не подтверждена'
+ # A model's numeric specifications must not silently change (e.g. 1-10x24 vs 6-36x56).
+ spec_pattern=r'(?<![a-z0-9])\\d{1,3}\\s*[-–]\\s*\\d{1,3}\\s*[x×]\\s*\\d{1,3}(?![a-z0-9])'
+ qspec={re.sub(r'\\s+','',x.lower()).replace('×','x').replace('–','-') for x in re.findall(spec_pattern,query,re.I)}
+ tspec={re.sub(r'\\s+','',x.lower()).replace('×','x').replace('–','-') for x in re.findall(spec_pattern,title,re.I)}
+ if qspec and not qspec.issubset(tspec):return 0.0,'Не совпадают характеристики модели'
  # Reject contradictory model numbers for other brands when both appear.
  model_pattern=r'\b(?=[a-z0-9-]*\d)[a-z]+[a-z0-9]*[- ]?\d[a-z0-9-]*\b'
  qmodels={re.sub(r'\W','',x.lower()) for x in re.findall(model_pattern,query,re.I)}
@@ -322,7 +344,7 @@ def make_tasks(query,upc,small):
 
 def add_candidate(conn,sid,url,status='Ожидает проверки'):
  url=canonical(url)
- if not url or not allowed_domain(url) or is_non_store(url):return False
+ if not url or not allowed_domain(url) or is_non_store(url) or is_marketplace(url):return False
  exists=conn.execute('SELECT 1 FROM candidates WHERE search_id=? AND url=?',(sid,url)).fetchone()
  if exists:return False
  conn.execute('INSERT INTO candidates(search_id,url,domain,status) VALUES(?,?,?,?)',(sid,url,shop_domain(url),status))
@@ -340,6 +362,13 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
   search=c.execute('SELECT query,upc,small,api_limit,store_limit FROM searches WHERE id=?',(sid,)).fetchone()
   if not search:return
   query,upc,small,api_limit,store_limit=search
+  batch=c.execute('SELECT b.id,b.api_limit,b.store_limit FROM search_batches b JOIN batch_items i ON i.batch_id=b.id WHERE i.search_id=?',(sid,)).fetchone()
+  if batch:
+   batch_id,batch_api_limit,batch_store_limit=batch
+   already=c.execute('SELECT COALESCE(SUM(j.api_used),0) FROM jobs j JOIN batch_items i ON i.search_id=j.search_id WHERE i.batch_id=? AND i.search_id<>?',(batch_id,sid)).fetchone()[0]
+   api_limit=max(0,batch_api_limit-already)
+   # The store cap applies to each requested product, while Brave budget is shared.
+   store_limit=batch_store_limit
   row=c.execute('SELECT queue,done,api_used,processed,errors FROM jobs WHERE search_id=?',(sid,)).fetchone()
   if not row:return
   tasks=json.loads(row[0]);done=set(json.loads(row[1]));api_used,processed,errors=row[2:]
@@ -349,7 +378,7 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
    c.execute('UPDATE jobs SET queue=?,done=?,api_used=?,processed=?,errors=? WHERE search_id=?',(json.dumps(tasks),json.dumps(sorted(done)),api_used,processed,errors,sid));c.commit()
   def ingest(url):
    url=canonical(url)
-   if not url or not allowed_domain(url) or is_non_store(url) or url in known_pages:return
+   if not url or not allowed_domain(url) or is_non_store(url) or is_marketplace(url) or url in known_pages:return
    known_pages.add(url);tasks.insert(index,{'kind':'page','url':url});add_candidate(c,sid,url)
   index=0
   # Persistent store knowledge is a hint for discovery, not proof of inventory.
@@ -436,4 +465,35 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
   status='paused' if pause.is_set() else 'complete'
   c.execute('UPDATE jobs SET status=? WHERE search_id=?',(status,sid));c.commit()
   emit(snapshot(c,sid)+(' | достигнут лимит магазинов' if n>=store_limit else ''))
+ finally:c.close()
+
+def create_batch(conn,products,small,api_limit,store_limit):
+ """Create a resumable batch. One job per product, one total Brave budget."""
+ names=split_products(products)
+ if not names:raise ValueError('Добавьте хотя бы один товар')
+ if len(names)>200:raise ValueError('Максимум 200 товаров за запуск')
+ cur=conn.execute('INSERT INTO search_batches(api_limit,store_limit) VALUES(?,?)',(api_limit,store_limit))
+ batch_id=cur.lastrowid
+ for position,name in enumerate(names):
+  sid=conn.execute('INSERT INTO searches(query,upc,small,api_limit,store_limit) VALUES(?,?,?,?,?)',(name,'',int(small),api_limit,store_limit)).lastrowid
+  tasks=make_tasks(name,'',small)
+  conn.execute('INSERT INTO jobs(search_id,queue,done,status) VALUES(?,?,?,?)',(sid,json.dumps(tasks),'[]','new'))
+  conn.execute('INSERT INTO batch_items(batch_id,search_id,position) VALUES(?,?,?)',(batch_id,sid,position))
+ conn.commit()
+ return batch_id
+
+def run_batch(db_path,batch_id,key,pause,emit,workers=5,proxy_url='',proxy_brave=False):
+ """Process batch sequentially; each run_search rechecks aggregate API usage."""
+ c=connect(db_path)
+ try:
+  ids=[row[0] for row in c.execute('SELECT search_id FROM batch_items WHERE batch_id=? ORDER BY position',(batch_id,))]
+  for sid in ids:
+   if pause.is_set():break
+   status=c.execute('SELECT status FROM jobs WHERE search_id=?',(sid,)).fetchone()
+   if status and status[0]=='complete':continue
+   name=c.execute('SELECT query FROM searches WHERE id=?',(sid,)).fetchone()[0]
+   emit('Товар: '+name)
+   run_search(db_path,sid,key,pause,emit,workers=workers,proxy_url=proxy_url,proxy_brave=proxy_brave)
+   c.commit()
+  c.execute('UPDATE search_batches SET status=? WHERE id=?',('paused' if pause.is_set() else 'complete',batch_id));c.commit()
  finally:c.close()
