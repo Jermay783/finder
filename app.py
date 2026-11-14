@@ -58,7 +58,7 @@ class App:
   updater.update_async(callback)
  def update_response(self,status,detail):
   if status=='up-to-date':return messagebox.showinfo('Finder','Установлена актуальная версия')
-  if status=='error':return messagebox.showerror('Finder','Не удалось проверить обновления: '+str(detail)+'\n\nДля приватного GitHub нужен gh auth login')
+  if status=='error':return messagebox.showerror('Finder','Не удалось проверить обновления: '+str(detail))
   if not messagebox.askyesno('Finder','Доступна версия '+str(detail)+'. Скачать и установить?'):return
   import updater
   def worker():
