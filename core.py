@@ -106,8 +106,8 @@ def query_specificity(query):
  """Brand/category names are broad; identifiers and model specifications are exact."""
  tokens=re.findall(r'[a-z0-9]+',query.lower())
  if len(tokens)<=1:return 'broad'
- if re.search(r'\\b(?:upc|ean|gtin|sku)\\s*[:#]?\\s*\\d{8,14}\\b',query,re.I):return 'exact'
- if re.search(r'\\b[a-z]*\\d+[a-z0-9-]*\\b',query,re.I):return 'exact'
+ if re.search(r'\b(?:upc|ean|gtin|sku)\s*[:#]?\s*\d{8,14}\b',query,re.I):return 'exact'
+ if re.search(r'\b[a-z]*\d+[a-z0-9-]*\b',query,re.I):return 'exact'
  return 'broad' if len(tokens)<=2 else 'exact'
 
 def match_product(query,title,upc='',found_upc=''):
@@ -496,7 +496,8 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
     done.add(task_id);processed+=1
    save()
   n=c.execute('SELECT COUNT(DISTINCT domain) FROM results WHERE search_id=?',(sid,)).fetchone()[0]
-  status='paused' if pause.is_set() else 'complete'
+  remaining=any(json.dumps(t,sort_keys=True) not in done for t in tasks)
+  status='paused' if pause.is_set() or (remaining and n<store_limit) else 'complete'
   c.execute('UPDATE jobs SET status=? WHERE search_id=?',(status,sid));c.commit()
   emit(snapshot(c,sid)+(' | достигнут лимит магазинов' if n>=store_limit else ''))
  finally:c.close()
