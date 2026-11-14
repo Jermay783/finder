@@ -273,10 +273,11 @@ def dom_product(soup,url,query,upc):
 
 def parse_page(url,query,upc,proxy_url=''):
     if not allowed_domain(url):return None,'FOREIGN_DOMAIN'
-    if is_non_store(url):return None,'NOT_STORE'
+    if is_non_store(url) or is_marketplace(url):return None,'NOT_STORE'
     final,html_text=page_html(url,proxy_url=proxy_url)
     if not html_text:return None,'Ошибка загрузки HTML'
     if not allowed_domain(final):return None,'FOREIGN_DOMAIN'
+    if is_non_store(final) or is_marketplace(final):return None,'NOT_STORE'
     def inspect(final,html_text):
         soup=BeautifulSoup(html_text,'html.parser')
         items=[]
@@ -303,7 +304,7 @@ def parse_page(url,query,upc,proxy_url=''):
     if links:return {'_links':links},'CATALOG'
     # Browser fallback only for pages that need it; Edge/Chrome or Playwright Chromium.
     final2,html2=page_html(url,dynamic=True,proxy_url=proxy_url)
-    if html2 and allowed_domain(final2):
+    if html2 and allowed_domain(final2) and not is_non_store(final2) and not is_marketplace(final2):
         item,why2,links=inspect(final2,html2)
         if item:return item,''
         if links:return {'_links':links},'CATALOG'
