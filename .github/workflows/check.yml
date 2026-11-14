@@ -1,0 +1,23 @@
+name: Check repository readiness
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check application files
+        shell: bash
+        run: |
+          test -f app.py || { echo "::error::Missing app.py"; exit 1; }
+          test -f core.py || { echo "::error::Missing core.py"; exit 1; }
+          test -f requirements.txt || { echo "::error::Missing requirements.txt"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pytest
+      - run: python -m pytest -q
