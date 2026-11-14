@@ -9,7 +9,7 @@ DB=os.path.join(BASE,'store_finder.sqlite3')
 
 class App:
  def __init__(self,root):
-  self.root=root;root.title('Finder 3.3');root.geometry('1250x820')
+  self.root=root;root.title('Finder 3.3.1');root.geometry('1250x820')
   self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None
   self.query=tk.StringVar();self.upc=tk.StringVar();self.key=tk.StringVar();self.small=tk.BooleanVar(value=True)
   self.show_key=tk.BooleanVar(value=False);self.limit=tk.IntVar(value=30);self.budget=tk.IntVar(value=100)
