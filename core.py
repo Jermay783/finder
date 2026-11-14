@@ -110,9 +110,9 @@ def match_product(query,title,upc='',found_upc=''):
  if expected and actual!=expected:return 0.0,'Другая модель / модификация iPhone'
  if expected and not actual:return 0.0,'Модель iPhone не подтверждена'
  # A model's numeric specifications must not silently change (e.g. 1-10x24 vs 6-36x56).
- spec_pattern=r'(?<![a-z0-9])\\d{1,3}\\s*[-–]\\s*\\d{1,3}\\s*[x×]\\s*\\d{1,3}(?![a-z0-9])'
- qspec={re.sub(r'\\s+','',x.lower()).replace('×','x').replace('–','-') for x in re.findall(spec_pattern,query,re.I)}
- tspec={re.sub(r'\\s+','',x.lower()).replace('×','x').replace('–','-') for x in re.findall(spec_pattern,title,re.I)}
+ spec_pattern=r'(?<![a-z0-9])\d{1,3}\s*[-–]\s*\d{1,3}\s*[x×]\s*\d{1,3}(?![a-z0-9])'
+ qspec={re.sub(r'\s+','',x.lower()).replace('×','x').replace('–','-') for x in re.findall(spec_pattern,query,re.I)}
+ tspec={re.sub(r'\s+','',x.lower()).replace('×','x').replace('–','-') for x in re.findall(spec_pattern,title,re.I)}
  if qspec and not qspec.issubset(tspec):return 0.0,'Не совпадают характеристики модели'
  # Reject contradictory model numbers for other brands when both appear.
  model_pattern=r'\b(?=[a-z0-9-]*\d)[a-z]+[a-z0-9]*[- ]?\d[a-z0-9-]*\b'
