@@ -276,7 +276,11 @@ def parse_page(url,query,upc,proxy_url=''):
     if not allowed_domain(url):return None,'FOREIGN_DOMAIN'
     if is_non_store(url) or is_marketplace(url):return None,'NOT_STORE'
     final,html_text=page_html(url,proxy_url=proxy_url)
-    if not html_text:return None,'Ошибка загрузки HTML'
+    if not html_text:
+        # A site may render successfully in a browser while refusing plain HTTP requests.
+        final,html_text=page_html(url,dynamic=True,proxy_url=proxy_url)
+        if not html_text:return None,'HTML недоступен через HTTP и браузерный режим'
+
     if not allowed_domain(final):return None,'FOREIGN_DOMAIN'
     if is_non_store(final) or is_marketplace(final):return None,'NOT_STORE'
     def inspect(final,html_text):
