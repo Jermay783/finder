@@ -4,7 +4,7 @@ from tkinter import ttk, filedialog, messagebox
 from urllib.parse import urlsplit, quote
 import requests
 import keyring
-from core import connect,make_tasks,run_search,snapshot
+from core import connect,make_tasks,run_search,run_batch,create_batch,split_products,snapshot
 
 BASE=os.path.join(os.environ.get('LOCALAPPDATA',os.path.expanduser('~')),'USStoreFinder3')
 os.makedirs(BASE,exist_ok=True)
@@ -14,7 +14,7 @@ class App:
  def __init__(self,root):
   self.root=root;root.title('Finder 3.5.2');root.geometry('1380x880');root.minsize(1050,700)
   self.configure_theme()
-  self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None
+  self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None;self.current_batch=None
   self.query=tk.StringVar();self.upc=tk.StringVar();self.key=tk.StringVar();self.small=tk.BooleanVar(value=True)
   self.show_key=tk.BooleanVar(value=False);self.limit=tk.IntVar(value=30);self.budget=tk.IntVar(value=100)
   self.minprice=tk.StringVar();self.maxprice=tk.StringVar();self.stock=tk.BooleanVar();self.newonly=tk.BooleanVar()
@@ -40,6 +40,12 @@ class App:
   self.query_entry=ttk.Entry(line,textvariable=self.query);self.query_entry.pack(side='left',fill='x',expand=True)
   self.edit_menu(self.query_entry)
   ttk.Button(line,text='Найти магазины',style='Primary.TButton',command=self.start).pack(side='left',padx=(10,0))
+  ttk.Label(top,text='Несколько товаров: по одному названию на строку (необязательно)').pack(anchor='w',pady=(10,4))
+  self.batch_input=tk.Text(top,height=4,bg='#1C2437',fg='#FFFFFF',insertbackground='#FFFFFF',relief='flat',font=('Segoe UI',10),undo=True)
+  self.batch_input.pack(fill='x')
+  self.batch_input.bind('<Control-v>',lambda e:(self.batch_input.event_generate('<<Paste>>'),'break')[1])
+  self.batch_input.bind('<Control-Cyrillic_em>',lambda e:(self.batch_input.event_generate('<<Paste>>'),'break')[1])
+  ttk.Button(top,text='Импорт списка TXT / CSV',command=self.import_products).pack(anchor='w',pady=(6,0))
   bar=ttk.Frame(search);bar.pack(fill='x',pady=12)
   for label,fn in [('Пауза',self.stop),('Продолжить',self.resume),('Сохранить TXT',self.export)]:
    ttk.Button(bar,text=label,command=fn).pack(side='left',padx=(0,8))
@@ -324,7 +330,7 @@ class App:
   sid=getattr(self,'history_selected',None)
   if sid is None:return
   row=self.conn.execute('SELECT query FROM searches WHERE id=?',(sid,)).fetchone()
-  if row:self.query.set(row[0]);self.show_page('search')
+  if row:self.query.set(row[0]);self.batch_input.delete('1.0','end');self.show_page('search')
  def export_history(self):
   sid=getattr(self,'history_selected',None)
   if sid is None:return
@@ -365,24 +371,48 @@ class App:
   with open(path,'w',encoding='utf-8-sig',newline='') as out:
    writer=csv.writer(out);writer.writerow(('Домен','Дата сохранения'))
    writer.writerows(self.conn.execute('SELECT domain,saved_at FROM saved_shops ORDER BY saved_at DESC'))
+ def import_products(self):
+  import csv
+  path=filedialog.askopenfilename(filetypes=[('Списки товаров','*.txt *.csv'),('Все файлы','*.*')])
+  if not path:return
+  try:
+   with open(path,'r',encoding='utf-8-sig',newline='') as source:
+    if path.lower().endswith('.csv'):
+     rows=list(csv.reader(source))
+     names=[row[0].strip() for row in rows if row and row[0].strip()]
+    else:names=source.read().splitlines()
+   self.batch_input.delete('1.0','end');self.batch_input.insert('1.0','\\n'.join(names))
+  except (OSError,UnicodeError) as exc:messagebox.showerror('Импорт',str(exc))
  def start(self):
   if self.worker and self.worker.is_alive():return messagebox.showwarning('Поиск','Сначала дождитесь остановки текущего поиска')
-  if not self.query.get().strip() or not self.key.get().strip():return messagebox.showerror('Ошибка','Введите товар и Brave API key')
+  batch_text=self.batch_input.get('1.0','end').strip()
+  products=split_products(batch_text) if batch_text else split_products(self.query.get())
+  if not products or not self.key.get().strip():return messagebox.showerror('Ошибка','Введите товар и Brave API key')
   try:limit=max(1,int(self.limit.get()));budget=max(1,int(self.budget.get()))
   except (ValueError,tk.TclError):return messagebox.showerror('Ошибка','Некорректные лимиты')
-  c=self.conn;c.execute('INSERT INTO searches(query,upc,small,api_limit,store_limit) VALUES(?,?,?,?,?)',(self.query.get().strip(),'',int(self.small.get()),budget,limit))
-  self.current=c.execute('SELECT last_insert_rowid()').fetchone()[0]
-  tasks=make_tasks(self.query.get().strip(),self.upc.get().strip(),self.small.get())
-  c.execute('INSERT INTO jobs(search_id,queue,done,status) VALUES(?,?,?,?)',(self.current,json.dumps(tasks),'[]','new'));c.commit()
+  self.current_batch=None
+  if len(products)>1:
+   try:self.current_batch=create_batch(self.conn,'\\n'.join(products),self.small.get(),budget,limit)
+   except ValueError as exc:return messagebox.showerror('Пакетный поиск',str(exc))
+   self.current=self.conn.execute('SELECT search_id FROM batch_items WHERE batch_id=? ORDER BY position LIMIT 1',(self.current_batch,)).fetchone()[0]
+  else:
+   name=products[0]
+   c=self.conn;c.execute('INSERT INTO searches(query,upc,small,api_limit,store_limit) VALUES(?,?,?,?,?)',(name,'',int(self.small.get()),budget,limit))
+   self.current=c.execute('SELECT last_insert_rowid()').fetchone()[0]
+   tasks=make_tasks(name,'',self.small.get())
+   c.execute('INSERT INTO jobs(search_id,queue,done,status) VALUES(?,?,?,?)',(self.current,json.dumps(tasks),'[]','new'));c.commit()
   self.load_history();self.refresh();self.show_page('search');self.launch()
  def launch(self):
   if self.worker and self.worker.is_alive():return
   if self.current is None:return
   if not self.key.get().strip():return messagebox.showerror('Brave','Введите API-ключ')
   self.pause.clear();sid=self.current;key=self.key.get().strip()
-  self.worker=threading.Thread(target=self.background,args=(sid,key),daemon=True);self.worker.start()
- def background(self,sid,key):
-  try:run_search(DB,sid,key,self.pause,lambda msg:self.q.put(msg),workers=5,proxy_url=self.normalized_proxy() if self.proxy_enabled.get() else '',proxy_brave=self.proxy_brave.get())
+  self.worker=threading.Thread(target=self.background,args=(sid,key,self.current_batch),daemon=True);self.worker.start()
+ def background(self,sid,key,batch_id=None):
+  try:
+   proxy=self.normalized_proxy() if self.proxy_enabled.get() else ''
+   if batch_id:run_batch(DB,batch_id,key,self.pause,lambda msg:self.q.put(msg),workers=5,proxy_url=proxy,proxy_brave=self.proxy_brave.get())
+   else:run_search(DB,sid,key,self.pause,lambda msg:self.q.put(msg),workers=5,proxy_url=proxy,proxy_brave=self.proxy_brave.get())
   except Exception as exc:self.q.put('Ошибка: '+str(exc))
   self.q.put('__DONE__')
  def stop(self):self.pause.set();self.q.put('Останавливаемся после текущих запросов...')
