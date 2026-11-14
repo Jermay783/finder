@@ -345,7 +345,15 @@ def seeded_queries(query,upc):
 
 def make_tasks(query,upc,small):
  # Deep search uses 2 offsets per query, capped by API budget at runtime.
- return ([{'kind':'search','query':q,'offset':0} for q in seeded_queries(query,upc)] + [{'kind':'search','query':q,'offset':off} for q in queries(query,upc,small) for off in (0,1)])
+ # Mix broad discovery with known retailer searches; do not exhaust the budget on seed domains.
+ broad=queries(query,upc,small)
+ seeds=seeded_queries(query,upc)
+ tasks=[]
+ for pos in range(max(len(broad),len(seeds))):
+  if pos<len(broad):tasks.append({'kind':'search','query':broad[pos],'offset':0})
+  if pos<len(seeds):tasks.append({'kind':'search','query':seeds[pos],'offset':0})
+ tasks.extend({'kind':'search','query':q,'offset':1} for q in broad)
+ return tasks
 
 def add_candidate(conn,sid,url,status='Ожидает проверки'):
  url=canonical(url)
@@ -405,7 +413,8 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
      if task_id in done:continue
      if task['kind']=='search':
       if api_used>=api_limit:
-       done.add(task_id);continue
+       # Keep unexecuted tasks pending so resume can retry them with a larger budget.
+       continue
       api_used+=1;save()
       try:
        with requests.Session() as session:links=search_brave(session,key,task['query'],task['offset'],proxy_url if proxy_brave else '')
