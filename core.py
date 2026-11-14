@@ -375,6 +375,7 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
   row=c.execute('SELECT queue,done,api_used,processed,errors FROM jobs WHERE search_id=?',(sid,)).fetchone()
   if not row:return
   tasks=json.loads(row[0]);done=set(json.loads(row[1]));api_used,processed,errors=row[2:]
+  if batch:api_limit+=api_used
   known_pages={t['url'] for t in tasks if t['kind']=='page'}
   c.execute("UPDATE jobs SET status='running' WHERE search_id=?",(sid,));c.commit()
   def save():
