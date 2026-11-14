@@ -11,7 +11,7 @@ DB=os.path.join(BASE,'store_finder.sqlite3')
 
 class App:
  def __init__(self,root):
-  self.root=root;root.title('Finder 3.4.0');root.geometry('1380x880');root.minsize(1050,700)
+  self.root=root;root.title('Finder 3.4.1');root.geometry('1380x880');root.minsize(1050,700)
   self.configure_theme()
   self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None
   self.query=tk.StringVar();self.upc=tk.StringVar();self.key=tk.StringVar();self.small=tk.BooleanVar(value=True)
@@ -27,7 +27,7 @@ class App:
   ttk.Button(sidebar,text='История',command=lambda:self.history.focus_set()).pack(fill='x',pady=5)
   ttk.Button(sidebar,text='Прокси и сеть',command=self.open_proxy_settings).pack(fill='x',pady=5)
   ttk.Button(sidebar,text='Обновления',command=self.check_updates).pack(fill='x',pady=5)
-  ttk.Label(sidebar,text='Версия 3.4.0',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
+  ttk.Label(sidebar,text='Версия 3.4.1',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
   content=ttk.Frame(root,padding=12);content.pack(side='left',fill='both',expand=True)
   ttk.Label(content,text='Поиск товаров',style='Heading.TLabel').pack(anchor='w',pady=(0,8))
   top=ttk.Frame(content,padding=9);top.pack(fill='x')
