@@ -332,7 +332,7 @@ class App:
   if not path:return
   with open(path,'w',encoding='utf-8') as out:
    for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id=?',(sid,)):
-    out.write(f'{domain} | {title} | {price or "—"} {currency}\\n{url}\\n\\n')
+    out.write(f'{domain} | {title} | {price or "—"} {currency}\n{url}\n\n')
  def delete_history(self):
   sid=getattr(self,'history_selected',None)
   if sid is None or not messagebox.askyesno('История','Удалить этот поиск и его результаты?'):return
