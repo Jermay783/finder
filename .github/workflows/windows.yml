@@ -66,7 +66,9 @@ jobs:
           $repo = "${{ github.repository }}"
           gh release view "$tag" --repo "$repo" *> $null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "Release $tag already exists; skipping automatic publication."
+            Write-Host "Release $tag already exists; replacing outdated binaries."
+            gh release upload "$tag" "dist/Finder.exe" "dist/SHA256SUMS.txt" --repo "$repo" --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Failed to update assets for $tag" }
             exit 0
           }
           Write-Host "Creating release $tag from commit ${{ github.sha }}"
