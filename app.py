@@ -355,7 +355,7 @@ class App:
   if str(sid).startswith('batch:'):
    bid=int(str(sid).split(':')[1])
    names=[row[0] for row in self.conn.execute('SELECT s.query FROM searches s JOIN batch_items i ON i.search_id=s.id WHERE i.batch_id=? ORDER BY i.position',(bid,))]
-   self.batch_input.delete('1.0','end');self.batch_input.insert('1.0','\\n'.join(names));self.show_page('search');return
+   self.batch_input.delete('1.0','end');self.batch_input.insert('1.0','\n'.join(names));self.show_page('search');return
   row=self.conn.execute('SELECT query FROM searches WHERE id=?',(int(sid),)).fetchone()
   if row:self.query.set(row[0]);self.batch_input.delete('1.0','end');self.show_page('search')
  def export_history(self):
