@@ -13,7 +13,7 @@ import requests
 REPO = "Jermay783/finder"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Finder-Updater/3.3"}
-VERSION = "3.4.0"
+VERSION = "3.4.1"
 
 
 def current_version():
@@ -91,26 +91,49 @@ def install_after_exit(downloaded, target=None):
         raise FileNotFoundError(str(downloaded))
     pid = os.getpid()
     script = downloaded.parent / "replace.ps1"
-    script.write_text("""param([int]$ParentPid,[string]$Source,[string]$Destination)
+    script.write_text(r"""param([int]$ParentPid,[string]$Source,[string]$Destination,[string]$ExpectedHash)
 $ErrorActionPreference = 'Stop'
-while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
-$backup = "$Destination.old"
+$log = Join-Path $env:LOCALAPPDATA 'Finder\\updater.log'
+New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
+function Log([string]$message) { Add-Content -LiteralPath $log -Value ("$(Get-Date -Format o) " + $message) }
 try {
+  Log "Started update: $Source -> $Destination"
+  $deadline = (Get-Date).AddSeconds(90)
+  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+    if ((Get-Date) -gt $deadline) { throw "Finder did not exit within 90 seconds" }
+    Start-Sleep -Milliseconds 500
+  }
+  if (-not (Test-Path -LiteralPath $Source)) { throw "Downloaded EXE missing" }
+  $actual = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actual -ne $ExpectedHash.ToLowerInvariant()) { throw "Downloaded EXE checksum mismatch" }
+  $backup = "$Destination.old"
   if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
   if (Test-Path -LiteralPath $Destination) { Move-Item -LiteralPath $Destination -Destination $backup -Force }
-  Copy-Item -LiteralPath $Source -Destination $Destination -Force
-  Start-Process -FilePath $Destination
-} catch {
-  if ((-not (Test-Path -LiteralPath $Destination)) -and (Test-Path -LiteralPath $backup)) {
-    Move-Item -LiteralPath $backup -Destination $Destination -Force
+  try {
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+    $installed = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($installed -ne $ExpectedHash.ToLowerInvariant()) { throw "Installed EXE checksum mismatch" }
+  } catch {
+    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
+    if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $Destination -Force }
+    throw
   }
-  throw
+  Log "Update installed successfully"
+  Start-Process -FilePath $Destination -WorkingDirectory (Split-Path $Destination)
+  Log "Restart requested"
+} catch {
+  Log ("FAILED: " + $_.Exception.ToString())
+  Add-Type -AssemblyName PresentationFramework
+  [System.Windows.MessageBox]::Show("Не удалось установить обновление Finder. Журнал: $log" + [Environment]::NewLine + $_.Exception.Message, "Finder - ошибка обновления") | Out-Null
+  exit 1
 }
 """, encoding="utf-8")
+    expected_hash = hashlib.sha256(downloaded.read_bytes()).hexdigest()
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     subprocess.Popen(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
-         "-ParentPid", str(pid), "-Source", str(downloaded), "-Destination", str(target)],
+         "-ParentPid", str(pid), "-Source", str(downloaded), "-Destination", str(target),
+         "-ExpectedHash", expected_hash],
         creationflags=flags, close_fds=True,
     )
 
