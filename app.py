@@ -55,6 +55,11 @@ class App:
   self.toggle(filt,'Только новые',self.newonly,self.refresh).pack(side='left',padx=10)
   ttk.Button(filt,text='Применить',command=self.refresh).pack(side='left',padx=8)
   right=ttk.Frame(search);right.pack(fill='both',expand=True)
+  batchbar=ttk.Frame(right);batchbar.pack(fill='x',pady=(0,6))
+  ttk.Label(batchbar,text='Результаты товара:').pack(side='left',padx=(0,8))
+  self.batch_choice=ttk.Combobox(batchbar,state='readonly',width=45)
+  self.batch_choice.pack(side='left')
+  self.batch_choice.bind('<<ComboboxSelected>>',self.choose_batch_product)
   ttk.Label(right,text='Подтверждённые товары').pack(anchor='w',pady=(0,6))
   columns=('domain','title','price','availability','condition','score','us')
   self.table=ttk.Treeview(right,columns=columns,show='headings',height=11)
@@ -459,7 +464,7 @@ class App:
    self.current=c.execute('SELECT last_insert_rowid()').fetchone()[0]
    tasks=make_tasks(name,'',self.small.get())
    c.execute('INSERT INTO jobs(search_id,queue,done,status) VALUES(?,?,?,?)',(self.current,json.dumps(tasks),'[]','new'));c.commit()
-  self.load_history();self.refresh();self.show_page('search');self.launch()
+  self.update_batch_choices();self.load_history();self.refresh();self.show_page('search');self.launch()
  def launch(self):
   if self.worker and self.worker.is_alive():return
   if self.current is None:return
@@ -475,6 +480,18 @@ class App:
   self.q.put('__DONE__')
  def stop(self):self.pause.set();self.q.put('Останавливаемся после текущих запросов...')
  def resume(self):self.launch()
+ def update_batch_choices(self):
+  if not hasattr(self,'batch_choice'):return
+  if self.current_batch is None:
+   self.batch_choice.configure(values=());self.batch_choice.set('Одиночный поиск');return
+  rows=list(self.conn.execute('SELECT i.search_id,s.query FROM batch_items i JOIN searches s ON s.id=i.search_id WHERE i.batch_id=? ORDER BY i.position',(self.current_batch,)))
+  self.batch_ids=[r[0] for r in rows]
+  self.batch_choice.configure(values=[r[1] for r in rows])
+  if self.current in self.batch_ids:self.batch_choice.current(self.batch_ids.index(self.current))
+ def choose_batch_product(self,event=None):
+  idx=self.batch_choice.current()
+  if idx>=0 and idx<len(getattr(self,'batch_ids',[])):
+   self.current=self.batch_ids[idx];self.refresh()
  def refresh(self):
   self.table.delete(*self.table.get_children());self.candidates.delete(*self.candidates.get_children())
   if self.current is None:return
