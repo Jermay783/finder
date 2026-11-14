@@ -45,6 +45,21 @@ class FinderBatchTests(unittest.TestCase):
         self.assertGreaterEqual(score, 0.75)
         self.assertEqual(reason, "")
 
+    def test_total_brave_budget_is_shared(self):
+        batch = core.create_batch(self.conn, "iPhone 17\niPhone 17 Pro\niPhone 17 Pro Max", False, 5, 30)
+        calls = []
+        def fake_search(session, key, query, offset, proxy_url=''):
+            calls.append(query)
+            return []
+        with patch.object(core, "search_brave", side_effect=fake_search):
+            core.run_batch(self.db, batch, "test-key", threading.Event(), lambda message: None)
+        used = self.conn.execute(
+            "SELECT COALESCE(SUM(j.api_used),0) FROM jobs j JOIN batch_items i ON i.search_id=j.search_id WHERE i.batch_id=?",
+            (batch,)
+        ).fetchone()[0]
+        self.assertLessEqual(used, 5)
+        self.assertEqual(used, len(calls))
+
     def test_local_saved_shops_initially_empty(self):
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM saved_shops").fetchone()[0], 0)
         self.conn.execute("INSERT OR IGNORE INTO saved_shops(domain) VALUES('example.com')")
