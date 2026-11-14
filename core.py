@@ -102,29 +102,24 @@ def gtin_valid(value):
  total=sum(int(d)*(3 if i%2 else 1) for i,d in enumerate(reversed(digits[:-1])))
  return (10-total%10)%10==int(digits[-1])
 
-def broad_iphone_query(query):
- """An unqualified iPhone query accepts any generation and variant."""
- return bool(re.fullmatch(r'\s*(?:apple\s+)?iphone\s*',query,re.I))
-
-def iphone_family_query(query):
- """A generation without suffix includes Pro/Max/Plus, but not other generations."""
- return bool(re.fullmatch(r'\s*(?:apple\s+)?iphone\s+\d{1,2}\s*',query,re.I))
+def query_specificity(query):
+ """Brand/category names are broad; identifiers and model specifications are exact."""
+ tokens=re.findall(r'[a-z0-9]+',query.lower())
+ if len(tokens)<=1:return 'broad'
+ if re.search(r'\\b(?:upc|ean|gtin|sku)\\s*[:#]?\\s*\\d{8,14}\\b',query,re.I):return 'exact'
+ if re.search(r'\\b[a-z]*\\d+[a-z0-9-]*\\b',query,re.I):return 'exact'
+ return 'broad' if len(tokens)<=2 else 'exact'
 
 def match_product(query,title,upc='',found_upc=''):
  if not title.strip():return 0.0,'Нет названия товара'
  if ACCESSORY.search(title) and not ACCESSORY.search(query):return 0.0,'Аксессуар или запасная часть'
  if upc and found_upc and re.sub(r'\D','',upc)!=re.sub(r'\D','',found_upc):return 0.0,'Другой UPC'
- if broad_iphone_query(query):
-  if not re.search(r'\biphone\s*\d{1,2}\b',title,re.I):return 0.0,'Не подтверждён iPhone'
-  if re.search(r'\b(?:case|cover|charger|screen protector|replacement part)\b',title,re.I):return 0.0,'Аксессуар'
-  return 1.0,''
- if iphone_family_query(query):
-  generation=re.search(r'iphone\s+(\d{1,2})',query,re.I).group(1)
-  models=re.findall(r'\biphone\s*(\d{1,2})\b',title,re.I)
-  if not models or any(m!=generation for m in models):return 0.0,'Другое поколение iPhone'
+ if query_specificity(query)=='broad':
+  q=query_tokens(query);t=query_tokens(title)
+  if not q.issubset(t):return 0.0,'Не совпадает категория или бренд'
   return 1.0,''
  expected=iphone_model(query);actual=iphone_model(title)
- if expected and len(re.findall(r'\\biphone\\s*\\d{1,2}\\s*(?:pro\\s*max|pro|plus|mini)?\\b',title,re.I))>1:return 0.0,'В названии несколько моделей iPhone'
+ if expected and len(re.findall(r'\biphone\s*\d{1,2}\s*(?:pro\s*max|pro|plus|mini)?\b',title,re.I))>1:return 0.0,'В названии несколько моделей iPhone'
  if expected and actual!=expected:return 0.0,'Другая модель / модификация iPhone'
  if expected and not actual:return 0.0,'Модель iPhone не подтверждена'
  # A model's numeric specifications must not silently change (e.g. 1-10x24 vs 6-36x56).
@@ -468,8 +463,8 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
        if reason:status='Отклонено'
        else:
         # Do not certify country from TLD or search locale. Mark as unverified.
-        duplicate=c.execute('SELECT 1 FROM results WHERE search_id=? AND domain=?',(sid,domain)).fetchone()
-        if duplicate:status='Отклонено';reason='Повтор магазина'
+        duplicate=c.execute('SELECT 1 FROM results WHERE search_id=? AND url=?',(sid,item['url'])).fetchone()
+        if duplicate:status='Отклонено';reason='Повтор ссылки'
         else:
          status='Подтверждённый магазин' if item['us_status']=='verified' else 'Требуется проверка';reason='' if item['us_status']=='verified' else 'Не подтверждена работа продавца в США'
          c.execute('INSERT OR REPLACE INTO results(search_id,url,domain,title,price,currency,availability,condition,upc,score) VALUES(?,?,?,?,?,?,?,?,?,?)',(sid,item['url'],domain,title,item['price'],item['currency'],item['availability'],item['condition'],item['upc'],item['score']))
