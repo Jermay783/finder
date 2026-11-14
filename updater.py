@@ -15,7 +15,7 @@ import requests
 REPO = "Jermay783/finder"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Finder-Updater/3.3"}
-VERSION = "3.5.1"
+VERSION = "3.5.2"
 
 
 def current_version():
@@ -93,10 +93,11 @@ def install_after_exit(downloaded, target=None):
         raise FileNotFoundError(str(downloaded))
     pid = os.getpid()
     script = downloaded.parent / "replace.ps1"
-    script.write_text(r"""param([int]$FinderProcessId,[string]$Source,[string]$Destination,[string]$ExpectedHash)
+    script.write_text(r"""param([int]$FinderProcessId,[string]$Source,[string]$Destination,[string]$ExpectedHash,[string]$ReadyFile)
 $ErrorActionPreference = 'Stop'
 $log = Join-Path $env:LOCALAPPDATA 'Finder/updater.log'
 New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
+Set-Content -LiteralPath $ReadyFile -Value 'ready' -Encoding ASCII
 function Log([string]$message) { Add-Content -LiteralPath $log -Value ("$(Get-Date -Format o) " + $message) }
 try {
   Log "Started update: $Source -> $Destination"
@@ -133,31 +134,51 @@ try {
 }
 """, encoding="utf-8-sig")
     expected_hash = hashlib.sha256(downloaded.read_bytes()).hexdigest()
-    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-    # Persist diagnostics before starting the helper, so even startup failures are visible.
+    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_dir = pathlib.Path(os.environ.get("LOCALAPPDATA", str(pathlib.Path.home()))) / "Finder"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "updater.log"
+    stderr_path = downloaded.parent / "powershell-output.txt"
+    ready_path = downloaded.parent / "installer-ready.txt"
+    ready_path.unlink(missing_ok=True)
+
     def log(message):
         with log_path.open("a", encoding="utf-8") as out:
-            out.write(f"{datetime.datetime.now().isoformat()} [launcher] {message}\n")
+            out.write(f"{datetime.datetime.now().isoformat()} [launcher] {message}\\n")
+
     log(f"Prepared update: pid={pid} source={downloaded} destination={target}")
+    command = [
+        "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+        "-ExecutionPolicy", "Bypass", "-File", str(script),
+        "-FinderProcessId", str(pid), "-Source", str(downloaded),
+        "-Destination", str(target), "-ExpectedHash", expected_hash,
+        "-ReadyFile", str(ready_path),
+    ]
     try:
-        proc = subprocess.Popen(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
-         "-FinderProcessId", str(pid), "-Source", str(downloaded), "-Destination", str(target),
-         "-ExpectedHash", expected_hash],
-        creationflags=flags, close_fds=True,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        with stderr_path.open("wb") as output:
+            proc = subprocess.Popen(
+                command, creationflags=flags, close_fds=True,
+                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+            )
         log(f"PowerShell helper launched: pid={proc.pid}")
-        time.sleep(1.0)
-        code = proc.poll()
-        if code is not None:
-            log(f"PowerShell helper exited prematurely: code={code}")
-            raise RuntimeError(f"Установщик завершился до закрытия Finder (код {code}). Журнал: {log_path}")
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            if ready_path.exists():
+                log("PowerShell helper acknowledged startup; Finder can exit")
+                return
+            code = proc.poll()
+            if code is not None:
+                output_text = stderr_path.read_bytes().decode("utf-8-sig", errors="replace")[-3000:]
+                log(f"PowerShell exited before handshake: code={code}; output={output_text!r}")
+                raise RuntimeError(
+                    f"Установщик завершился до начала установки (код {code}). "
+                    f"Диагностика: {stderr_path}"
+                )
+            time.sleep(0.2)
+        log(f"PowerShell startup handshake timed out; output={stderr_path}")
+        raise RuntimeError(f"Нет подтверждения запуска установщика. Диагностика: {stderr_path}")
     except Exception as exc:
-        log(f"Failed to launch helper: {exc}")
+        log(f"Failed to start installer: {exc}")
         raise
 
 
