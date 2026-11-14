@@ -15,7 +15,7 @@ import requests
 REPO = "Jermay783/finder"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Finder-Updater/3.3"}
-VERSION = "3.5.0"
+VERSION = "3.5.1"
 
 
 def current_version():
