@@ -43,8 +43,7 @@ class App:
   ttk.Label(top,text='Несколько товаров: по одному названию на строку (необязательно)').pack(anchor='w',pady=(10,4))
   self.batch_input=tk.Text(top,height=4,bg='#1C2437',fg='#FFFFFF',insertbackground='#FFFFFF',relief='flat',font=('Segoe UI',10),undo=True)
   self.batch_input.pack(fill='x')
-  self.batch_input.bind('<Control-v>',lambda e:(self.batch_input.event_generate('<<Paste>>'),'break')[1])
-  self.batch_input.bind('<Control-Cyrillic_em>',lambda e:(self.batch_input.event_generate('<<Paste>>'),'break')[1])
+  self.setup_batch_paste(self.batch_input)
   ttk.Button(top,text='Импорт списка TXT / CSV',command=self.import_products).pack(anchor='w',pady=(6,0))
   bar=ttk.Frame(search);bar.pack(fill='x',pady=12)
   for label,fn in [('Пауза',self.stop),('Продолжить',self.resume),('Сохранить TXT',self.export)]:
@@ -289,6 +288,27 @@ class App:
     self.root.after(0,self.root.destroy)
    except Exception as exc:self.root.after(0,lambda e=str(exc):messagebox.showerror('Finder','Ошибка обновления: '+e))
   threading.Thread(target=worker,daemon=True).start()
+ def setup_batch_paste(self,widget):
+  """Use clipboard directly: Tk virtual paste varies with keyboard layout on Windows."""
+  def paste_text(event=None):
+   try:value=self.root.clipboard_get()
+   except tk.TclError:return 'break'
+   widget.focus_set()
+   try:widget.delete('sel.first','sel.last')
+   except tk.TclError:pass
+   widget.insert('insert',value)
+   return 'break'
+  def ctrl_key(event):
+   if event.state & 0x4 and (event.keycode==86 or event.keysym.lower() in ('v','cyrillic_em')):
+    return paste_text(event)
+  for sequence in ('<Control-v>','<Control-V>','<Control-Cyrillic_em>','<Shift-Insert>'):
+   widget.bind(sequence,paste_text)
+  widget.bind('<Control-KeyPress>',ctrl_key,add='+')
+  menu=tk.Menu(widget,tearoff=False)
+  menu.add_command(label='Вставить',command=paste_text)
+  menu.add_command(label='Копировать',command=lambda:widget.event_generate('<<Copy>>'))
+  menu.add_command(label='Выделить всё',command=lambda:widget.tag_add('sel','1.0','end-1c'))
+  widget.bind('<Button-3>',lambda e:(menu.tk_popup(e.x_root,e.y_root),menu.grab_release()))
  def paste(self,entry):
   try:value=self.root.clipboard_get()
   except tk.TclError:return messagebox.showwarning('Буфер обмена','Сначала скопируйте текст')
