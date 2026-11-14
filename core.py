@@ -406,12 +406,19 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
   tasks=json.loads(row[0]);done=set(json.loads(row[1]));api_used,processed,errors=row[2:]
   if batch:api_limit+=api_used
   known_pages={t['url'] for t in tasks if t['kind']=='page'}
+  # One failed storefront should not consume dozens of browser attempts.
+  # Persist failures in candidates so resuming the search retains this protection.
+  failed_domains={domain for domain,reason in c.execute(
+   "SELECT domain,reason FROM candidates WHERE search_id=? AND reason LIKE 'HTML недоступен%'",
+   (sid,)) if domain}
+  def unavailable_domain(url):
+   return shop_domain(url) in failed_domains
   c.execute("UPDATE jobs SET status='running' WHERE search_id=?",(sid,));c.commit()
   def save():
    c.execute('UPDATE jobs SET queue=?,done=?,api_used=?,processed=?,errors=? WHERE search_id=?',(json.dumps(tasks),json.dumps(sorted(done)),api_used,processed,errors,sid));c.commit()
   def ingest(url):
    url=canonical(url)
-   if not url or not allowed_domain(url) or is_non_store(url) or is_marketplace(url) or url in known_pages:return
+   if not url or not allowed_domain(url) or is_non_store(url) or is_marketplace(url) or url in known_pages or unavailable_domain(url):return
    known_pages.add(url);tasks.insert(index,{'kind':'page','url':url});add_candidate(c,sid,url)
   index=0
   # Persistent store knowledge is a hint for discovery, not proof of inventory.
@@ -443,6 +450,10 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
       done.add(task_id);save()
      else:
       url=task['url']
+      if unavailable_domain(url):
+       c.execute("UPDATE candidates SET status='Требуется проверка',reason='Сайт недоступен; повторные запросы пропущены' WHERE search_id=? AND url=?",(sid,url))
+       done.add(task_id);processed+=1;save()
+       continue
       c.execute("UPDATE candidates SET status='Проверяется' WHERE search_id=? AND url=?",(sid,url));c.commit()
       pending[pool.submit(parse_page,url,query,upc,proxy_url)]=(task_id,url)
     if pending:
@@ -452,6 +463,7 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
       try:item,issue=future.result()
       except Exception as exc:item,issue=None,'Ошибка обработки: '+type(exc).__name__
       domain=shop_domain(url);reason=issue;status='Требуется проверка';title=''
+      if issue and issue.startswith('HTML недоступен'):failed_domains.add(domain)
       if issue=='CATALOG' and item:
        for child in item['_links']:ingest(child)
        item=None;issue='Каталог: добавлены отдельные товарные страницы'
