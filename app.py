@@ -53,7 +53,7 @@ class App:
   ttk.Button(filt,text='Применить',command=self.refresh).pack(side='left')
   pane=ttk.Panedwindow(content,orient='horizontal');pane.pack(fill='both',expand=True,padx=9,pady=6)
   left=ttk.Frame(pane);right=ttk.Frame(pane);pane.add(left,weight=1);pane.add(right,weight=5)
-  ttk.Label(left,text='История поисков').pack(anchor='w');self.history=tk.Listbox(left);self.history.pack(fill='both',expand=True);self.history.bind('<<ListboxSelect>>',self.select_history)
+  ttk.Label(left,text='История поисков').pack(anchor='w');self.history=tk.Listbox(left,bg='#151D2E',fg='#E4EAF8',selectbackground='#6941B5',selectforeground='#FFFFFF',borderwidth=0,highlightthickness=0,font=('Segoe UI',10));self.history.pack(fill='both',expand=True);self.history.bind('<<ListboxSelect>>',self.select_history)
   ttk.Label(right,text='Товары (страна США проверяется отдельно)').pack(anchor='w')
   columns=('domain','title','price','availability','condition','score','us')
   self.table=ttk.Treeview(right,columns=columns,show='headings',height=11)
