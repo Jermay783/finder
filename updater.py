@@ -144,7 +144,7 @@ try {
 
     def log(message):
         with log_path.open("a", encoding="utf-8") as out:
-            out.write(f"{datetime.datetime.now().isoformat()} [launcher] {message}\\n")
+            out.write(f"{datetime.datetime.now().isoformat()} [launcher] {message}\n")
 
     log(f"Prepared update: pid={pid} source={downloaded} destination={target}")
     command = [
