@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS jobs(search_id INTEGER PRIMARY KEY,queue TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS candidates(search_id INTEGER,url TEXT,domain TEXT,title TEXT DEFAULT '',status TEXT DEFAULT 'Ожидает',reason TEXT DEFAULT '',PRIMARY KEY(search_id,url));
 CREATE TABLE IF NOT EXISTS results(search_id INTEGER,url TEXT,domain TEXT,title TEXT,price REAL,currency TEXT,availability TEXT,condition TEXT,upc TEXT,score REAL,checked TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(search_id,url));
 CREATE TABLE IF NOT EXISTS stores(domain TEXT PRIMARY KEY,shop_name TEXT,first_seen TEXT DEFAULT CURRENT_TIMESTAMP,last_seen TEXT DEFAULT CURRENT_TIMESTAMP,us_status TEXT DEFAULT 'unverified',category_terms TEXT DEFAULT '',product_count INTEGER DEFAULT 0,platform TEXT DEFAULT '',last_product_url TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS saved_shops(domain TEXT PRIMARY KEY, saved_at TEXT DEFAULT CURRENT_TIMESTAMP, note TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS ix_results_domain ON results(search_id,domain);
 CREATE INDEX IF NOT EXISTS ix_candidates_status ON candidates(search_id,status);
 '''
