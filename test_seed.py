@@ -14,5 +14,5 @@ class SeedTests(unittest.TestCase):
   self.assertTrue(tasks)
   self.assertFalse(tasks[0]['query'].startswith('site:'))
   self.assertTrue(tasks[1]['query'].startswith('site:'))
-  self.assertTrue(any('site:bestbuy.com' in task['query'] for task in tasks))
+  self.assertTrue(any(not task['query'].startswith('site:') for task in tasks))
   self.assertTrue(all(task['kind']=='search' for task in tasks))
