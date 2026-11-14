@@ -153,7 +153,7 @@ class App:
    actual=hashlib.sha256(pathlib.Path(sys.executable).read_bytes()).hexdigest().lower()
    if expected==actual:
     marker.unlink(missing_ok=True)
-    messagebox.showinfo('Finder','Обновление успешно установлено. Текущая версия: 3.5.0')
+    messagebox.showinfo('Finder','Обновление успешно установлено. Текущая версия: 3.5.1')
   except OSError:
    pass
  def configure_theme(self):
