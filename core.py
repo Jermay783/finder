@@ -107,6 +107,7 @@ def match_product(query,title,upc='',found_upc=''):
  if ACCESSORY.search(title) and not ACCESSORY.search(query):return 0.0,'Аксессуар или запасная часть'
  if upc and found_upc and re.sub(r'\D','',upc)!=re.sub(r'\D','',found_upc):return 0.0,'Другой UPC'
  expected=iphone_model(query);actual=iphone_model(title)
+ if expected and len(re.findall(r'\\biphone\\s*\\d{1,2}\\s*(?:pro\\s*max|pro|plus|mini)?\\b',title,re.I))>1:return 0.0,'В названии несколько моделей iPhone'
  if expected and actual!=expected:return 0.0,'Другая модель / модификация iPhone'
  if expected and not actual:return 0.0,'Модель iPhone не подтверждена'
  # A model's numeric specifications must not silently change (e.g. 1-10x24 vs 6-36x56).
@@ -290,6 +291,9 @@ def parse_page(url,query,upc,proxy_url=''):
                 currency=str(offer.get('priceCurrency') or '')
                 if non_us_currency(currency):continue
                 # Price and product JSON-LD alone are not enough on articles or collections.
+                if not offer:return None,'Нет предложения продавца',[]
+                if not (offer.get('availability') or offer.get('price') or offer.get('lowPrice')):continue
+                if not (PRODUCT_PATH.search(urlsplit(final).path) or soup.select_one('button[name*=cart i], button[id*=cart i], [data-testid*=add-to-cart i]')):continue
                 if ARTICLE_PATH.search(urlsplit(final).path):continue
                 if not PRODUCT_PATH.search(urlsplit(final).path) and LISTING_PATH.search(urlsplit(final).path):continue
                 item={'us_status':'unverified','url':canonical(final),'domain':shop_domain(final),'title':title,'price':parse_price(offer.get('price') or offer.get('lowPrice')),'currency':currency,'availability':str(offer.get('availability','')).rsplit('/',1)[-1] or 'Unknown','condition':str(offer.get('itemCondition','')).rsplit('/',1)[-1] or ('RefurbishedCondition' if REFURB.search(title) else 'Unknown'),'upc':'','score':score,'reason':why}
@@ -320,7 +324,7 @@ RETAIL_SEEDS = {
  'beauty':['ulta.com','sephora.com','target.com','walmart.com','cvs.com','walgreens.com'],
  'general':['walmart.com','target.com','amazon.com','costco.com','samsclub.com','ebay.com']
 }
-NON_STORE_DOMAINS={'businessinsider.com','wired.com','smartprix.com','appleinventorycheck.com','applepricehunt.com','theverge.com','cnet.com','techradar.com','tomsguide.com','gsmarena.com','reddit.com','youtube.com','pinterest.com','wikipedia.org','forbes.com','nytimes.com','androidauthority.com','phonearena.com','pcmag.com'}
+NON_STORE_DOMAINS={'iphoneprices.info','businessinsider.com','wired.com','smartprix.com','appleinventorycheck.com','applepricehunt.com','theverge.com','cnet.com','techradar.com','tomsguide.com','gsmarena.com','reddit.com','youtube.com','pinterest.com','wikipedia.org','forbes.com','nytimes.com','androidauthority.com','phonearena.com','pcmag.com'}
 def is_non_store(url):
  domain=shop_domain(url)
  return domain in NON_STORE_DOMAINS
