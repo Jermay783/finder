@@ -102,7 +102,7 @@ class App:
   ttk.Label(settings,text='Протокол').pack(anchor='w',pady=(12,4))
   ttk.Combobox(settings,textvariable=self.proxy_protocol,values=('http','https','socks5','socks5h'),state='readonly',width=14).pack(anchor='w')
   ttk.Label(settings,text='Адрес прокси (host:port:login:password или login:password@host:port)').pack(anchor='w',pady=(12,4))
-  self.proxy_entry=ttk.Entry(settings,textvariable=self.proxy_url,show='*');self.proxy_entry.pack(fill='x')
+  self.proxy_entry=ttk.Entry(settings,textvariable=self.proxy_url,show='*');self.proxy_entry.pack(fill='x');self.edit_menu(self.proxy_entry)
   self.proxy_status=tk.StringVar(value='Пароль прокси сохраняется только в защищённом хранилище Windows')
   ttk.Label(settings,textvariable=self.proxy_status).pack(anchor='w',pady=8)
   proxybar=ttk.Frame(settings);proxybar.pack(anchor='w',pady=8)
@@ -256,7 +256,14 @@ class App:
   menu.add_command(label='Копировать',command=lambda:entry.event_generate('<<Copy>>'))
   menu.add_command(label='Выделить всё',command=lambda:(entry.focus_set(),entry.selection_range(0,'end')))
   entry.bind('<Button-3>',lambda e:(menu.tk_popup(e.x_root,e.y_root),menu.grab_release()))
-  for key in ('<Control-v>','<Control-V>','<Shift-Insert>'):entry.bind(key,lambda e:(self.paste(entry),'break')[1])
+  for key in ('<Control-v>','<Control-V>','<Control-Cyrillic_em>','<Shift-Insert>'):
+   entry.bind(key,lambda e:(self.paste(entry),'break')[1])
+  # Physical V key on Windows has keycode 86 even with a Cyrillic layout.
+  def ctrl_paste(event):
+   if (event.state & 0x4) and event.keycode==86:
+    self.paste(entry)
+    return 'break'
+  entry.bind('<Control-KeyPress>',ctrl_paste,add='+')
  def load_history(self):
   self.history.delete(0,'end');self.ids={}
   for i,(sid,name,date) in enumerate(self.conn.execute('SELECT id,query,created FROM searches ORDER BY id DESC')):
