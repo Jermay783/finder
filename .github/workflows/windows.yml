@@ -2,8 +2,7 @@ name: Build Finder for Windows
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
 permissions:
   contents: write
 jobs:
@@ -18,18 +17,20 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
-      - name: Build one-file EXE
+          pip install -r requirements.txt pyinstaller pytest
+      - name: Run tests
         shell: pwsh
-        run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Finder app.py
-      - name: Upload build artifact
+        run: python -m pytest -q
+      - name: Build Finder.exe
+        shell: pwsh
+        run: pyinstaller --noconfirm --clean --onefile --windowed --collect-all playwright --name Finder app.py
+      - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
           name: Finder-Windows
           path: dist/Finder.exe
           if-no-files-found: error
-      - name: Publish private GitHub Release on version tag
+      - name: Create private release on version tag
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
