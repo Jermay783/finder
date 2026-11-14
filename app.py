@@ -11,7 +11,7 @@ DB=os.path.join(BASE,'store_finder.sqlite3')
 
 class App:
  def __init__(self,root):
-  self.root=root;root.title('Finder 3.4.1');root.geometry('1380x880');root.minsize(1050,700)
+  self.root=root;root.title('Finder 3.4.2');root.geometry('1380x880');root.minsize(1050,700)
   self.configure_theme()
   self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None
   self.query=tk.StringVar();self.upc=tk.StringVar();self.key=tk.StringVar();self.small=tk.BooleanVar(value=True)
@@ -27,7 +27,7 @@ class App:
   ttk.Button(sidebar,text='История',command=lambda:self.history.focus_set()).pack(fill='x',pady=5)
   ttk.Button(sidebar,text='Прокси и сеть',command=self.open_proxy_settings).pack(fill='x',pady=5)
   ttk.Button(sidebar,text='Обновления',command=self.check_updates).pack(fill='x',pady=5)
-  ttk.Label(sidebar,text='Версия 3.4.1',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
+  ttk.Label(sidebar,text='Версия 3.4.2',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
   content=ttk.Frame(root,padding=12);content.pack(side='left',fill='both',expand=True)
   ttk.Label(content,text='Поиск товаров',style='Heading.TLabel').pack(anchor='w',pady=(0,8))
   top=ttk.Frame(content,padding=9);top.pack(fill='x')
@@ -52,20 +52,23 @@ class App:
   ttk.Checkbutton(filt,text='Только новые',variable=self.newonly,command=self.refresh).pack(side='left',padx=6)
   ttk.Button(filt,text='Применить',command=self.refresh).pack(side='left')
   pane=ttk.Panedwindow(content,orient='horizontal');pane.pack(fill='both',expand=True,padx=9,pady=6)
-  left=ttk.Frame(pane);right=ttk.Frame(pane);pane.add(left,weight=1);pane.add(right,weight=5)
+  left=ttk.Frame(pane);right=ttk.Frame(pane);pane.add(left,weight=2);pane.add(right,weight=5)
   ttk.Label(left,text='История поисков').pack(anchor='w');self.history=tk.Listbox(left,bg='#151D2E',fg='#E4EAF8',selectbackground='#6941B5',selectforeground='#FFFFFF',borderwidth=0,highlightthickness=0,font=('Segoe UI',10));self.history.pack(fill='both',expand=True);self.history.bind('<<ListboxSelect>>',self.select_history)
   ttk.Label(right,text='Товары (страна США проверяется отдельно)').pack(anchor='w')
   columns=('domain','title','price','availability','condition','score','us')
   self.table=ttk.Treeview(right,columns=columns,show='headings',height=11)
-  for name,width in [('domain',145),('title',330),('price',100),('availability',100),('condition',110),('score',65),('us',120)]:self.table.heading(name,text=name);self.table.column(name,width=width)
+  labels={'domain':'Магазин','title':'Товар','price':'Цена','availability':'Наличие','condition':'Состояние','score':'Оценка','us':'США'}
+  for name,width in [('domain',145),('title',330),('price',100),('availability',100),('condition',110),('score',65),('us',120)]:self.table.heading(name,text=labels[name]);self.table.column(name,width=width,minwidth=60,stretch=name=='title')
   self.table.pack(fill='both',expand=True);self.table.bind('<Double-1>',lambda e:self.open_url(self.table))
   ttk.Label(right,text='Все найденные ссылки — статус и причина отклонения (двойной клик открывает сайт)').pack(anchor='w')
   self.candidates=ttk.Treeview(right,columns=('domain','title','status','reason'),show='headings',height=9)
-  for name,width in [('domain',150),('title',270),('status',220),('reason',320)]:self.candidates.heading(name,text=name);self.candidates.column(name,width=width)
+  labels={'domain':'Магазин','title':'Страница','status':'Статус','reason':'Причина отклонения'}
+  for name,width in [('domain',150),('title',270),('status',220),('reason',320)]:self.candidates.heading(name,text=labels[name]);self.candidates.column(name,width=width,minwidth=75,stretch=name in ('title','reason'))
   self.candidates.pack(fill='both',expand=True);self.candidates.bind('<Double-1>',lambda e:self.open_url(self.candidates))
   ttk.Label(content,textvariable=self.progress).pack(anchor='w',padx=9)
   self.log=tk.Text(content,height=4,state='disabled',bg='#101525',fg='#B8C5DD',insertbackground='#FFFFFF',relief='flat',font=('Segoe UI',10));self.log.pack(fill='x',padx=9,pady=(0,9))
   ttk.Button(bar,text='Прокси',command=self.open_proxy_settings).pack(side='left',padx=4)
+  root.after(150,lambda:pane.sashpos(0,300))
   self.load_history();root.after(350,self.poll)
  def configure_theme(self):
   self.root.configure(bg='#0B1020')
@@ -174,7 +177,7 @@ class App:
  def load_history(self):
   self.history.delete(0,'end');self.ids={}
   for i,(sid,name,date) in enumerate(self.conn.execute('SELECT id,query,created FROM searches ORDER BY id DESC')):
-   self.ids[i]=sid;self.history.insert('end',f'{sid}: {name[:25]} ({date})')
+   self.ids[i]=sid;self.history.insert('end',f'{sid}: {name} ({date[:10]})')
  def select_history(self,event=None):
   sel=self.history.curselection()
   if sel:self.current=self.ids[sel[0]];self.refresh()
