@@ -366,7 +366,10 @@ def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=Fal
   if batch:
    batch_id,batch_api_limit,batch_store_limit=batch
    already=c.execute('SELECT COALESCE(SUM(j.api_used),0) FROM jobs j JOIN batch_items i ON i.search_id=j.search_id WHERE i.batch_id=? AND i.search_id<>?',(batch_id,sid)).fetchone()[0]
-   api_limit=max(0,batch_api_limit-already)
+   remaining=max(0,batch_api_limit-already)
+   remaining_items=c.execute('SELECT COUNT(*) FROM batch_items i JOIN jobs j ON j.search_id=i.search_id WHERE i.batch_id=? AND j.status!=?',(batch_id,'complete')).fetchone()[0]
+   # Reserve a fair portion for each remaining product instead of spending it all on the first.
+   api_limit=min(remaining,max(1,remaining//max(1,remaining_items))) if remaining else 0
    # The store cap applies to each requested product, while Brave budget is shared.
    store_limit=batch_store_limit
   row=c.execute('SELECT queue,done,api_used,processed,errors FROM jobs WHERE search_id=?',(sid,)).fetchone()
