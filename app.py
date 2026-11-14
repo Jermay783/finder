@@ -101,7 +101,8 @@ class App:
   body=ttk.Panedwindow(history,orient='horizontal');body.pack(fill='both',expand=True)
   left=ttk.Frame(body);right_history=ttk.Frame(body)
   body.add(left,weight=1);body.add(right_history,weight=3)
-  self.history=ttk.Treeview(left,columns=('query','date','count'),show='headings',selectmode='browse')
+  self.history=ttk.Treeview(left,columns=('query','date','count'),show='tree headings',selectmode='browse')
+  self.history.heading('#0',text='Группа');self.history.column('#0',width=85,minwidth=70)
   for key,label,width in [('query','Товар',175),('date','Дата',100),('count','Магазины',85)]:
    self.history.heading(key,text=label);self.history.column(key,width=width,minwidth=60)
   self.history.pack(fill='both',expand=True,padx=(0,10))
@@ -315,35 +316,72 @@ class App:
   if not hasattr(self,'history'):return
   self.history.delete(*self.history.get_children())
   term=self.history_filter.get().lower().strip()
-  rows=self.conn.execute('SELECT s.id,s.query,s.created,COUNT(DISTINCT r.domain) FROM searches s LEFT JOIN results r ON r.search_id=s.id GROUP BY s.id ORDER BY s.id DESC')
+  batches={}
+  for batch_id,search_id in self.conn.execute('SELECT batch_id,search_id FROM batch_items'):
+   batches[search_id]=batch_id
+  created={}
+  for bid,date in self.conn.execute('SELECT id,created FROM search_batches ORDER BY id DESC'):
+   created[bid]=date
+  rows=list(self.conn.execute('SELECT s.id,s.query,s.created,COUNT(DISTINCT r.domain) FROM searches s LEFT JOIN results r ON r.search_id=s.id GROUP BY s.id ORDER BY s.id DESC'))
+  visible_batches={}
   for sid,name,date,count in rows:
    if term and term not in name.lower():continue
-   self.history.insert('','end',iid=str(sid),values=(name,date[:16],count))
+   bid=batches.get(sid)
+   if bid:
+    parent='batch:'+str(bid)
+    if parent not in visible_batches:
+     self.history.insert('','end',iid=parent,text='Пакет',values=('Несколько товаров',created.get(bid,date)[:16],''))
+     visible_batches[parent]=True
+    self.history.insert(parent,'end',iid=str(sid),text='Товар',values=(name,date[:16],count))
+    self.history.item(parent,open=True)
+   else:self.history.insert('','end',iid=str(sid),text='Поиск',values=(name,date[:16],count))
  def select_history(self,event=None):
   selected=self.history.selection()
   if not selected:return
-  sid=int(selected[0]);self.history_selected=sid
+  item=selected[0]
+  self.history_selected=item
   self.history_results.delete(*self.history_results.get_children())
-  for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id=?',(sid,)):
-   self.history_results.insert('','end',iid=url,values=(domain,title,f'{price} {currency}' if price is not None else '—'))
+  if item.startswith('batch:'):
+   ids=[row[0] for row in self.conn.execute('SELECT search_id FROM batch_items WHERE batch_id=? ORDER BY position',(int(item.split(':')[1]),))]
+  else:ids=[int(item)]
+  for sid in ids:
+   for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id=?',(sid,)):
+    # Same URL can occur in multiple product searches; preserve both entries.
+    iid=str(sid)+':'+url
+    self.history_results.insert('','end',iid=iid,values=(domain,title,f'{price} {currency}' if price is not None else '—'))
  def repeat_history(self):
   sid=getattr(self,'history_selected',None)
   if sid is None:return
-  row=self.conn.execute('SELECT query FROM searches WHERE id=?',(sid,)).fetchone()
+  if str(sid).startswith('batch:'):
+   bid=int(str(sid).split(':')[1])
+   names=[row[0] for row in self.conn.execute('SELECT s.query FROM searches s JOIN batch_items i ON i.search_id=s.id WHERE i.batch_id=? ORDER BY i.position',(bid,))]
+   self.batch_input.delete('1.0','end');self.batch_input.insert('1.0','\\n'.join(names));self.show_page('search');return
+  row=self.conn.execute('SELECT query FROM searches WHERE id=?',(int(sid),)).fetchone()
   if row:self.query.set(row[0]);self.batch_input.delete('1.0','end');self.show_page('search')
  def export_history(self):
   sid=getattr(self,'history_selected',None)
   if sid is None:return
+  ids=([r[0] for r in self.conn.execute('SELECT search_id FROM batch_items WHERE batch_id=?',(int(str(sid).split(':')[1]),))] if str(sid).startswith('batch:') else [int(sid)])
   path=filedialog.asksaveasfilename(defaultextension='.txt',filetypes=[('Text','*.txt')])
   if not path:return
   with open(path,'w',encoding='utf-8') as out:
-   for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id=?',(sid,)):
+   for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id IN ('+','.join('?' for _ in ids)+')',ids):
     out.write(f'{domain} | {title} | {price or "—"} {currency}\n{url}\n\n')
  def delete_history(self):
   sid=getattr(self,'history_selected',None)
   if sid is None or not messagebox.askyesno('История','Удалить этот поиск и его результаты?'):return
-  for table in ('results','candidates','jobs'):self.conn.execute(f'DELETE FROM {table} WHERE search_id=?',(sid,))
-  self.conn.execute('DELETE FROM searches WHERE id=?',(sid,));self.conn.commit()
+  if str(sid).startswith('batch:'):
+   bid=int(str(sid).split(':')[1])
+   ids=[r[0] for r in self.conn.execute('SELECT search_id FROM batch_items WHERE batch_id=?',(bid,))]
+   self.conn.execute('DELETE FROM batch_items WHERE batch_id=?',(bid,))
+   self.conn.execute('DELETE FROM search_batches WHERE id=?',(bid,))
+  else:
+   ids=[int(sid)]
+   self.conn.execute('DELETE FROM batch_items WHERE search_id=?',(int(sid),))
+  for one in ids:
+   for table in ('results','candidates','jobs'):self.conn.execute(f'DELETE FROM {table} WHERE search_id=?',(one,))
+   self.conn.execute('DELETE FROM searches WHERE id=?',(one,))
+  self.conn.commit()
   self.history_selected=None;self.history_results.delete(*self.history_results.get_children());self.load_history()
  def save_selected_shop(self):
   selected=self.table.selection()
@@ -435,7 +473,10 @@ class App:
   self.progress.set(snapshot(self.conn,self.current))
  def open_url(self,tree):
   selected=tree.selection()
-  if selected:webbrowser.open(selected[0])
+  if selected:
+   url=selected[0]
+   if ':' in url and not url.startswith(('https://','http://')):url=url.split(':',1)[1]
+   webbrowser.open(url)
  def export(self):
   if self.current is None:return
   path=filedialog.asksaveasfilename(defaultextension='.txt',filetypes=[('Text','*.txt')])
