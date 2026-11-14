@@ -13,7 +13,7 @@ import requests
 REPO = "Jermay783/finder"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Finder-Updater/3.3"}
-VERSION = "3.4.1"
+VERSION = "3.4.2"
 
 
 def current_version():
@@ -91,15 +91,15 @@ def install_after_exit(downloaded, target=None):
         raise FileNotFoundError(str(downloaded))
     pid = os.getpid()
     script = downloaded.parent / "replace.ps1"
-    script.write_text(r"""param([int]$ParentPid,[string]$Source,[string]$Destination,[string]$ExpectedHash)
+    script.write_text(r"""param([int]$FinderProcessId,[string]$Source,[string]$Destination,[string]$ExpectedHash)
 $ErrorActionPreference = 'Stop'
-$log = Join-Path $env:LOCALAPPDATA 'Finder\\updater.log'
+$log = Join-Path $env:LOCALAPPDATA 'Finder/updater.log'
 New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
 function Log([string]$message) { Add-Content -LiteralPath $log -Value ("$(Get-Date -Format o) " + $message) }
 try {
   Log "Started update: $Source -> $Destination"
   $deadline = (Get-Date).AddSeconds(90)
-  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
+  while (Get-Process -Id $FinderProcessId -ErrorAction SilentlyContinue) {
     if ((Get-Date) -gt $deadline) { throw "Finder did not exit within 90 seconds" }
     Start-Sleep -Milliseconds 500
   }
@@ -132,7 +132,7 @@ try {
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     subprocess.Popen(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
-         "-ParentPid", str(pid), "-Source", str(downloaded), "-Destination", str(target),
+         "-FinderProcessId", str(pid), "-Source", str(downloaded), "-Destination", str(target),
          "-ExpectedHash", expected_hash],
         creationflags=flags, close_fds=True,
     )
