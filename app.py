@@ -12,7 +12,7 @@ DB=os.path.join(BASE,'store_finder.sqlite3')
 
 class App:
  def __init__(self,root):
-  self.root=root;root.title('Finder 3.5.2');root.geometry('1380x880');root.minsize(1050,700)
+  self.root=root;root.title('Finder 3.6.0');root.geometry('1380x880');root.minsize(1050,700)
   self.configure_theme()
   self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None;self.current_batch=None
   self.query=tk.StringVar();self.upc=tk.StringVar();self.key=tk.StringVar();self.small=tk.BooleanVar(value=True)
@@ -27,7 +27,7 @@ class App:
   ttk.Label(sidebar,text='FINDER',style='Brand.TLabel').pack(anchor='w',pady=(8,32))
   for label,page in [('Поиск товаров','search'),('История','history'),('Мои магазины','shops'),('Настройки','settings'),('Обновления','updates')]:
    ttk.Button(sidebar,text=label,style='Nav.TButton',command=lambda p=page:self.show_page(p)).pack(fill='x',pady=5)
-  ttk.Label(sidebar,text='Версия 3.5.2',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
+  ttk.Label(sidebar,text='Версия 3.6.0',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
   content=ttk.Frame(root,padding=22);content.pack(side='left',fill='both',expand=True)
   self.pages={}
   for name in ('search','history','shops','settings','updates'):
@@ -156,7 +156,7 @@ class App:
   ttk.Button(proxybar,text='Сохранить прокси',command=self.save_proxy_ui).pack(side='left')
   updates=self.pages['updates']
   ttk.Label(updates,text='Обновления',style='Heading.TLabel').pack(anchor='w',pady=(0,15))
-  ttk.Label(updates,text='Текущая версия Finder: 3.5.2').pack(anchor='w',pady=8)
+  ttk.Label(updates,text='Текущая версия Finder: 3.6.0').pack(anchor='w',pady=8)
   ttk.Button(updates,text='Проверить обновления',style='Primary.TButton',command=self.check_updates).pack(anchor='w',pady=8)
  def load_app_settings(self):
   try:
@@ -199,7 +199,7 @@ class App:
    actual=hashlib.sha256(pathlib.Path(sys.executable).read_bytes()).hexdigest().lower()
    if expected==actual:
     marker.unlink(missing_ok=True)
-    messagebox.showinfo('Finder','Обновление успешно установлено. Текущая версия: 3.5.2')
+    messagebox.showinfo('Finder','Обновление успешно установлено. Текущая версия: 3.6.0')
   except OSError:
    pass
  def configure_theme(self):
