@@ -25,12 +25,12 @@ class App:
   self.load_app_settings()
   sidebar=ttk.Frame(root,style='Sidebar.TFrame',padding=18);sidebar.pack(side='left',fill='y')
   ttk.Label(sidebar,text='FINDER',style='Brand.TLabel').pack(anchor='w',pady=(8,32))
-  for label,page in [('Поиск товаров','search'),('История','history'),('Настройки','settings'),('Обновления','updates')]:
+  for label,page in [('Поиск товаров','search'),('История','history'),('Мои магазины','shops'),('Настройки','settings'),('Обновления','updates')]:
    ttk.Button(sidebar,text=label,style='Nav.TButton',command=lambda p=page:self.show_page(p)).pack(fill='x',pady=5)
   ttk.Label(sidebar,text='Версия 3.5.2',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
   content=ttk.Frame(root,padding=22);content.pack(side='left',fill='both',expand=True)
   self.pages={}
-  for name in ('search','history','settings','updates'):
+  for name in ('search','history','shops','settings','updates'):
    frame=ttk.Frame(content);self.pages[name]=frame
   search=self.pages['search']
   ttk.Label(search,text='Поиск магазинов',style='Heading.TLabel').pack(anchor='w',pady=(0,12))
@@ -56,8 +56,15 @@ class App:
   labels={'domain':'Магазин','title':'Товар','price':'Цена','availability':'Наличие','condition':'Состояние','score':'Оценка','us':'США'}
   for name,width in [('domain',145),('title',330),('price',100),('availability',100),('condition',110),('score',65),('us',120)]:self.table.heading(name,text=labels[name]);self.table.column(name,width=width,minwidth=60,stretch=name=='title')
   self.table.pack(fill='both',expand=True);self.table.bind('<Double-1>',lambda e:self.open_url(self.table))
-  ttk.Label(right,text='Все найденные ссылки — статус и причина отклонения (двойной клик открывает сайт)').pack(anchor='w')
-  self.candidates=ttk.Treeview(right,columns=('domain','title','status','reason'),show='headings',height=9)
+  tools=ttk.Frame(right);tools.pack(fill='x',pady=7)
+  ttk.Button(tools,text='Детали проверки',command=self.open_diagnostics).pack(side='left',padx=(0,8))
+  ttk.Button(tools,text='Сохранить выбранный магазин',command=self.save_selected_shop).pack(side='left',padx=(0,8))
+  ttk.Button(tools,text='Сохранить все найденные',command=self.save_all_shops).pack(side='left')
+  self.diagnostics=tk.Toplevel(root);self.diagnostics.title('Finder — детали проверки');self.diagnostics.geometry('1050x600');self.diagnostics.withdraw()
+  self.diagnostics.protocol('WM_DELETE_WINDOW',self.diagnostics.withdraw)
+  ttk.Label(self.diagnostics,text='Все найденные ссылки и причины отклонения').pack(anchor='w',padx=12,pady=10)
+  
+  self.candidates=ttk.Treeview(self.diagnostics,columns=('domain','title','status','reason'),show='headings',height=9)
   labels={'domain':'Магазин','title':'Страница','status':'Статус','reason':'Причина отклонения'}
   for name,width in [('domain',150),('title',270),('status',220),('reason',320)]:self.candidates.heading(name,text=labels[name]);self.candidates.column(name,width=width,minwidth=75,stretch=name in ('title','reason'))
   self.candidates.pack(fill='both',expand=True);self.candidates.bind('<Double-1>',lambda e:self.open_url(self.candidates))
@@ -71,6 +78,7 @@ class App:
   for frame in self.pages.values():frame.pack_forget()
   self.pages[name].pack(fill='both',expand=True)
   if name=='history':self.load_history()
+  if name=='shops':self.load_saved_shops()
   if name=='search':self.query_entry.focus_set()
  def toggle(self,parent,label,var,command=None):
   widget=ttk.Checkbutton(parent,text=label,variable=var,style='Switch.TCheckbutton',command=command)
@@ -78,10 +86,41 @@ class App:
  def build_secondary_pages(self):
   history=self.pages['history']
   ttk.Label(history,text='История поисков',style='Heading.TLabel').pack(anchor='w',pady=(0,12))
-  self.history=tk.Listbox(history,bg='#20252D',fg='#E8EBF0',selectbackground='#48515E',selectforeground='#FFFFFF',borderwidth=0,highlightthickness=0,font=('Segoe UI',11))
-  self.history.pack(fill='both',expand=True)
-  self.history.bind('<<ListboxSelect>>',self.select_history)
-  ttk.Button(history,text='Открыть выбранный поиск',command=lambda:self.show_page('search')).pack(anchor='w',pady=12)
+  searchrow=ttk.Frame(history);searchrow.pack(fill='x',pady=(0,10))
+  self.history_filter=tk.StringVar()
+  ttk.Label(searchrow,text='Найти поиск:').pack(side='left',padx=(0,8))
+  history_input=ttk.Entry(searchrow,textvariable=self.history_filter)
+  history_input.pack(side='left',fill='x',expand=True);self.edit_menu(history_input)
+  self.history_filter.trace_add('write',lambda *_:self.load_history())
+  body=ttk.Panedwindow(history,orient='horizontal');body.pack(fill='both',expand=True)
+  left=ttk.Frame(body);right_history=ttk.Frame(body)
+  body.add(left,weight=1);body.add(right_history,weight=3)
+  self.history=ttk.Treeview(left,columns=('query','date','count'),show='headings',selectmode='browse')
+  for key,label,width in [('query','Товар',175),('date','Дата',100),('count','Магазины',85)]:
+   self.history.heading(key,text=label);self.history.column(key,width=width,minwidth=60)
+  self.history.pack(fill='both',expand=True,padx=(0,10))
+  self.history.bind('<<TreeviewSelect>>',self.select_history)
+  ttk.Label(right_history,text='Результаты выбранного поиска',style='Heading.TLabel').pack(anchor='w',pady=(0,12))
+  self.history_results=ttk.Treeview(right_history,columns=('domain','title','price'),show='headings')
+  for key,label,width in [('domain','Магазин',150),('title','Товар',280),('price','Цена',100)]:
+   self.history_results.heading(key,text=label);self.history_results.column(key,width=width)
+  self.history_results.pack(fill='both',expand=True)
+  self.history_results.bind('<Double-1>',lambda e:self.open_url(self.history_results))
+  history_actions=ttk.Frame(right_history);history_actions.pack(fill='x',pady=10)
+  ttk.Button(history_actions,text='Повторить поиск',command=self.repeat_history).pack(side='left',padx=(0,8))
+  ttk.Button(history_actions,text='Экспорт TXT',command=self.export_history).pack(side='left',padx=(0,8))
+  ttk.Button(history_actions,text='Удалить из истории',command=self.delete_history).pack(side='left')
+  shops=self.pages['shops']
+  ttk.Label(shops,text='Мои магазины',style='Heading.TLabel').pack(anchor='w',pady=(0,12))
+  ttk.Label(shops,text='Только магазины, которые вы сохранили на этом компьютере').pack(anchor='w',pady=(0,10))
+  self.saved_shops=ttk.Treeview(shops,columns=('domain','date','products'),show='headings')
+  for key,label,width in [('domain','Магазин',230),('date','Добавлен',145),('products','Найденных товаров',155)]:
+   self.saved_shops.heading(key,text=label);self.saved_shops.column(key,width=width)
+  self.saved_shops.pack(fill='both',expand=True)
+  shop_actions=ttk.Frame(shops);shop_actions.pack(fill='x',pady=10)
+  ttk.Button(shop_actions,text='Открыть сайт',command=self.open_saved_shop).pack(side='left',padx=(0,8))
+  ttk.Button(shop_actions,text='Удалить',command=self.remove_saved_shop).pack(side='left',padx=(0,8))
+  ttk.Button(shop_actions,text='Экспорт CSV',command=self.export_shops).pack(side='left')
   settings=self.pages['settings']
   ttk.Label(settings,text='Настройки',style='Heading.TLabel').pack(anchor='w',pady=(0,18))
   ttk.Label(settings,text='Brave Search API Key').pack(anchor='w')
@@ -264,13 +303,68 @@ class App:
     self.paste(entry)
     return 'break'
   entry.bind('<Control-KeyPress>',ctrl_paste,add='+')
+ def open_diagnostics(self):
+  self.diagnostics.deiconify();self.diagnostics.lift()
  def load_history(self):
-  self.history.delete(0,'end');self.ids={}
-  for i,(sid,name,date) in enumerate(self.conn.execute('SELECT id,query,created FROM searches ORDER BY id DESC')):
-   self.ids[i]=sid;self.history.insert('end',f'{sid}: {name} ({date[:10]})')
+  if not hasattr(self,'history'):return
+  self.history.delete(*self.history.get_children())
+  term=self.history_filter.get().lower().strip()
+  rows=self.conn.execute('SELECT s.id,s.query,s.created,COUNT(DISTINCT r.domain) FROM searches s LEFT JOIN results r ON r.search_id=s.id GROUP BY s.id ORDER BY s.id DESC')
+  for sid,name,date,count in rows:
+   if term and term not in name.lower():continue
+   self.history.insert('','end',iid=str(sid),values=(name,date[:16],count))
  def select_history(self,event=None):
-  sel=self.history.curselection()
-  if sel:self.current=self.ids[sel[0]];self.refresh();self.show_page('search')
+  selected=self.history.selection()
+  if not selected:return
+  sid=int(selected[0]);self.history_selected=sid
+  self.history_results.delete(*self.history_results.get_children())
+  for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id=?',(sid,)):
+   self.history_results.insert('','end',iid=url,values=(domain,title,f'{price} {currency}' if price is not None else '—'))
+ def repeat_history(self):
+  sid=getattr(self,'history_selected',None)
+  if sid is None:return
+  row=self.conn.execute('SELECT query FROM searches WHERE id=?',(sid,)).fetchone()
+  if row:self.query.set(row[0]);self.show_page('search')
+ def export_history(self):
+  sid=getattr(self,'history_selected',None)
+  if sid is None:return
+  path=filedialog.asksaveasfilename(defaultextension='.txt',filetypes=[('Text','*.txt')])
+  if not path:return
+  with open(path,'w',encoding='utf-8') as out:
+   for url,domain,title,price,currency in self.conn.execute('SELECT url,domain,title,price,currency FROM results WHERE search_id=?',(sid,)):
+    out.write(f'{domain} | {title} | {price or "—"} {currency}\\n{url}\\n\\n')
+ def delete_history(self):
+  sid=getattr(self,'history_selected',None)
+  if sid is None or not messagebox.askyesno('История','Удалить этот поиск и его результаты?'):return
+  for table in ('results','candidates','jobs'):self.conn.execute(f'DELETE FROM {table} WHERE search_id=?',(sid,))
+  self.conn.execute('DELETE FROM searches WHERE id=?',(sid,));self.conn.commit()
+  self.history_selected=None;self.history_results.delete(*self.history_results.get_children());self.load_history()
+ def save_selected_shop(self):
+  selected=self.table.selection()
+  if not selected:return messagebox.showinfo('Мои магазины','Выберите магазин в таблице')
+  domain=self.table.item(selected[0],'values')[0]
+  self.conn.execute('INSERT OR IGNORE INTO saved_shops(domain) VALUES(?)',(domain,));self.conn.commit()
+  messagebox.showinfo('Мои магазины',f'{domain} сохранён локально')
+ def save_all_shops(self):
+  domains={self.table.item(i,'values')[0] for i in self.table.get_children()}
+  for domain in domains:self.conn.execute('INSERT OR IGNORE INTO saved_shops(domain) VALUES(?)',(domain,))
+  self.conn.commit();messagebox.showinfo('Мои магазины',f'Сохранено магазинов: {len(domains)}')
+ def load_saved_shops(self):
+  self.saved_shops.delete(*self.saved_shops.get_children())
+  for domain,date,count in self.conn.execute('SELECT s.domain,s.saved_at,COUNT(r.url) FROM saved_shops s LEFT JOIN results r ON r.domain=s.domain GROUP BY s.domain ORDER BY s.saved_at DESC'):
+   self.saved_shops.insert('','end',iid=domain,values=(domain,date[:16],count))
+ def open_saved_shop(self):
+  for domain in self.saved_shops.selection():webbrowser.open('https://'+domain)
+ def remove_saved_shop(self):
+  for domain in self.saved_shops.selection():self.conn.execute('DELETE FROM saved_shops WHERE domain=?',(domain,))
+  self.conn.commit();self.load_saved_shops()
+ def export_shops(self):
+  import csv
+  path=filedialog.asksaveasfilename(defaultextension='.csv',filetypes=[('CSV','*.csv')])
+  if not path:return
+  with open(path,'w',encoding='utf-8-sig',newline='') as out:
+   writer=csv.writer(out);writer.writerow(('Домен','Дата сохранения'))
+   writer.writerows(self.conn.execute('SELECT domain,saved_at FROM saved_shops ORDER BY saved_at DESC'))
  def start(self):
   if self.worker and self.worker.is_alive():return messagebox.showwarning('Поиск','Сначала дождитесь остановки текущего поиска')
   if not self.query.get().strip() or not self.key.get().strip():return messagebox.showerror('Ошибка','Введите товар и Brave API key')
