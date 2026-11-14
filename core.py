@@ -109,8 +109,8 @@ def queries(name,upc,small):
  if small:base.extend([f'"{name}" independent store',f'"{name}" specialty shop',f'"{name}" small business',f'"{name}" boutique',f'"{name}" -amazon -ebay -walmart',f'"{name}" site:myshopify.com',f'"{name}" site:bigcommerce.com'])
  return list(dict.fromkeys(base))
 
-def search_brave(session,key,q,offset):
- r=session.get(API,params={'q':q,'count':20,'offset':offset,'country':'us','search_lang':'en'},headers={**UA,'X-Subscription-Token':key,'Accept':'application/json'},timeout=(8,20))
+def search_brave(session,key,q,offset,proxy_url=''):
+ r=session.get(API,params={'q':q,'count':20,'offset':offset,'country':'us','search_lang':'en'},headers={**UA,'X-Subscription-Token':key,'Accept':'application/json'},timeout=(8,20),proxies={'https':proxy_url,'http':proxy_url} if proxy_url else None)
  if r.status_code!=200:raise RuntimeError(f'Brave HTTP {r.status_code}: {r.text[:160]}')
  return [canonical(x.get('url','')) for x in r.json().get('web',{}).get('results',[]) if x.get('url')]
 
@@ -178,7 +178,7 @@ LISTING_PATH=re.compile(r'/(?:search|browse|category|categories|c/kp|collections
 ARTICLE_PATH=re.compile(r'/(?:news|guides|reviews|blog|articles|stories|best-|how-to)/',re.I)
 PRICE_PATTERN=re.compile(r'(?<!\w)\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)')
 
-def page_html(url, dynamic=False):
+def page_html(url, dynamic=False, proxy_url=''):
     if dynamic:
         try:
             from playwright.sync_api import sync_playwright
@@ -186,11 +186,11 @@ def page_html(url, dynamic=False):
                 browser=None
                 for channel in ('msedge','chrome'):
                     try:
-                        browser=p.chromium.launch(channel=channel,headless=True,timeout=12000)
+                        browser=p.chromium.launch(channel=channel,headless=True,timeout=12000,proxy={'server':proxy_url} if proxy_url else None)
                         break
                     except Exception:pass
                 if browser is None:
-                    browser=p.chromium.launch(headless=True,timeout=12000)
+                    browser=p.chromium.launch(headless=True,timeout=12000,proxy={'server':proxy_url} if proxy_url else None)
                 try:
                     page=browser.new_page(locale='en-US',viewport={'width':1300,'height':900})
                     page.goto(url,wait_until='domcontentloaded',timeout=16000)
@@ -200,7 +200,7 @@ def page_html(url, dynamic=False):
                 finally:browser.close()
         except Exception:return None,None
     try:
-        r=requests.get(url,headers=UA,timeout=(6,10),allow_redirects=True)
+        r=requests.get(url,headers=UA,timeout=(6,10),allow_redirects=True,proxies={'https':proxy_url,'http':proxy_url} if proxy_url else None)
         if r.status_code!=200 or 'html' not in r.headers.get('Content-Type','').lower():return None,None
         return r.url,r.text[:3_000_000]
     except requests.RequestException:return None,None
@@ -248,10 +248,10 @@ def dom_product(soup,url,query,upc):
     avail='InStock' if re.search(r'\b(add to cart|buy now|pay in full)\b',body,re.I) else 'Unknown'
     return {'us_status':'unverified','url':canonical(url),'domain':shop_domain(url),'title':title,'price':price,'currency':currency,'availability':avail,'condition':condition,'upc':'','score':score,'reason':''},''
 
-def parse_page(url,query,upc):
+def parse_page(url,query,upc,proxy_url=''):
     if not allowed_domain(url):return None,'FOREIGN_DOMAIN'
     if is_non_store(url):return None,'NOT_STORE'
-    final,html_text=page_html(url)
+    final,html_text=page_html(url,proxy_url=proxy_url)
     if not html_text:return None,'Ошибка загрузки HTML'
     if not allowed_domain(final):return None,'FOREIGN_DOMAIN'
     def inspect(final,html_text):
@@ -279,7 +279,7 @@ def parse_page(url,query,upc):
     if item:return item,''
     if links:return {'_links':links},'CATALOG'
     # Browser fallback only for pages that need it; Edge/Chrome or Playwright Chromium.
-    final2,html2=page_html(url,dynamic=True)
+    final2,html2=page_html(url,dynamic=True,proxy_url=proxy_url)
     if html2 and allowed_domain(final2):
         item,why2,links=inspect(final2,html2)
         if item:return item,''
@@ -333,7 +333,7 @@ def snapshot(conn,sid):
  total=conn.execute('SELECT COUNT(*) FROM candidates WHERE search_id=?',(sid,)).fetchone()[0]
  return f'Магазинов {n} | Ссылок {total} | Проверено {job[1]} | Ошибок {job[2]} | API {job[0]} | {job[3]}'
 
-def run_search(db_path,sid,key,pause,emit,workers=5):
+def run_search(db_path,sid,key,pause,emit,workers=5,proxy_url='',proxy_brave=False):
  c=connect(db_path)
  try:
   search=c.execute('SELECT query,upc,small,api_limit,store_limit FROM searches WHERE id=?',(sid,)).fetchone()
@@ -369,7 +369,7 @@ def run_search(db_path,sid,key,pause,emit,workers=5):
        done.add(task_id);continue
       api_used+=1;save()
       try:
-       with requests.Session() as session:links=search_brave(session,key,task['query'],task['offset'])
+       with requests.Session() as session:links=search_brave(session,key,task['query'],task['offset'],proxy_url if proxy_brave else '')
        for url in links:ingest(url)
        emit(f'Brave: {len(links)} ссылок | API {api_used}/{api_limit}')
       except Exception as exc:
@@ -380,7 +380,7 @@ def run_search(db_path,sid,key,pause,emit,workers=5):
      else:
       url=task['url']
       c.execute("UPDATE candidates SET status='Проверяется' WHERE search_id=? AND url=?",(sid,url));c.commit()
-      pending[pool.submit(parse_page,url,query,upc)]=(task_id,url)
+      pending[pool.submit(parse_page,url,query,upc,proxy_url)]=(task_id,url)
     if pending:
      completed,_=wait(pending,timeout=0.4,return_when=FIRST_COMPLETED)
      for future in completed:
