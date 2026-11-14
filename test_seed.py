@@ -10,4 +10,9 @@ class SeedTests(unittest.TestCase):
   self.assertTrue(is_non_store('https://www.wired.com/reviews/phones'))
   self.assertFalse(is_non_store('https://www.bestbuy.com/site/test'))
  def test_priority(self):
-  self.assertTrue(make_tasks('iPhone 17','',True)[0]['query'].startswith('site:'))
+  tasks=make_tasks('iPhone 17','',True)
+  self.assertTrue(tasks)
+  self.assertFalse(tasks[0]['query'].startswith('site:'))
+  self.assertTrue(tasks[1]['query'].startswith('site:'))
+  self.assertTrue(any('site:bestbuy.com' in task['query'] for task in tasks))
+  self.assertTrue(all(task['kind']=='search' for task in tasks))
