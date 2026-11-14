@@ -13,7 +13,7 @@ import requests
 REPO = "Jermay783/finder"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Finder-Updater/3.3"}
-VERSION = "3.4.2"
+VERSION = "3.4.3"
 
 
 def current_version():
@@ -119,6 +119,8 @@ try {
     throw
   }
   Log "Update installed successfully"
+  $marker = Join-Path $env:LOCALAPPDATA 'Finder/update-success.txt'
+  Set-Content -LiteralPath $marker -Value $ExpectedHash -Encoding ascii
   Start-Process -FilePath $Destination -WorkingDirectory (Split-Path $Destination)
   Log "Restart requested"
 } catch {
@@ -130,6 +132,7 @@ try {
 """, encoding="utf-8")
     expected_hash = hashlib.sha256(downloaded.read_bytes()).hexdigest()
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    # Fail visibly if PowerShell cannot even start.
     subprocess.Popen(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
          "-FinderProcessId", str(pid), "-Source", str(downloaded), "-Destination", str(target),
