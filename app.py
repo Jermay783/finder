@@ -11,7 +11,7 @@ DB=os.path.join(BASE,'store_finder.sqlite3')
 
 class App:
  def __init__(self,root):
-  self.root=root;root.title('Finder 3.4.2');root.geometry('1380x880');root.minsize(1050,700)
+  self.root=root;root.title('Finder 3.4.3');root.geometry('1380x880');root.minsize(1050,700)
   self.configure_theme()
   self.conn=connect(DB);self.q=queue.Queue();self.pause=threading.Event();self.worker=None;self.current=None
   self.query=tk.StringVar();self.upc=tk.StringVar();self.key=tk.StringVar();self.small=tk.BooleanVar(value=True)
@@ -27,7 +27,7 @@ class App:
   ttk.Button(sidebar,text='История',command=lambda:self.history.focus_set()).pack(fill='x',pady=5)
   ttk.Button(sidebar,text='Прокси и сеть',command=self.open_proxy_settings).pack(fill='x',pady=5)
   ttk.Button(sidebar,text='Обновления',command=self.check_updates).pack(fill='x',pady=5)
-  ttk.Label(sidebar,text='Версия 3.4.2',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
+  ttk.Label(sidebar,text='Версия 3.4.3',style='Muted.TLabel').pack(side='bottom',anchor='w',pady=12)
   content=ttk.Frame(root,padding=12);content.pack(side='left',fill='both',expand=True)
   ttk.Label(content,text='Поиск товаров',style='Heading.TLabel').pack(anchor='w',pady=(0,8))
   top=ttk.Frame(content,padding=9);top.pack(fill='x')
@@ -70,6 +70,21 @@ class App:
   ttk.Button(bar,text='Прокси',command=self.open_proxy_settings).pack(side='left',padx=4)
   root.after(150,lambda:pane.sashpos(0,300))
   self.load_history();root.after(350,self.poll)
+  root.after(800,self.report_update_result)
+ def report_update_result(self):
+  """Show a one-time confirmation after a verified self-update."""
+  import hashlib
+  import pathlib
+  marker=pathlib.Path(os.environ.get('LOCALAPPDATA',os.path.expanduser('~')))/'Finder'/'update-success.txt'
+  if not marker.is_file() or not getattr(sys,'frozen',False):return
+  try:
+   expected=marker.read_text(encoding='ascii').strip().lower()
+   actual=hashlib.sha256(pathlib.Path(sys.executable).read_bytes()).hexdigest().lower()
+   if expected==actual:
+    marker.unlink(missing_ok=True)
+    messagebox.showinfo('Finder','Обновление успешно установлено. Текущая версия: 3.4.3')
+  except OSError:
+   pass
  def configure_theme(self):
   self.root.configure(bg='#0B1020')
   style=ttk.Style(self.root)
